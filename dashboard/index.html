@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>personalproject — Startdashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="config.js"></script>
+</head>
+<body>
+  <div class="bg"></div>
+  <header class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="logo">◆</span>
+        <div>
+          <h1>personalproject</h1>
+          <p class="tagline">Self-hosted toolkit — alles op één plek</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="refresh-btn" class="btn btn-ghost" type="button">Status vernieuwen</button>
+        <span id="updated-at" class="muted"></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="section">
+      <h2>Web apps</h2>
+      <p class="section-desc">Docker-services en lokale tools — klik om te openen.</p>
+      <div id="app-grid" class="grid"></div>
+    </section>
+
+    <section class="section two-col">
+      <div class="panel">
+        <h2>CLI — terminal</h2>
+        <p class="section-desc">Tools die op je machine draaien (niet via browser).</p>
+        <ul class="cli-list" id="cli-list"></ul>
+      </div>
+      <div class="panel">
+        <h2>Snel starten</h2>
+        <ol class="steps">
+          <li><code>make up</code> — start Docker-services</li>
+          <li>Open dit dashboard op poort <strong id="dash-port">8080</strong></li>
+          <li>CLI: <code>pt urls</code> voor alle links</li>
+        </ol>
+        <div class="note">
+          <strong>Tip:</strong> Plausible en Fooocus zijn optioneel — start ze apart via <code>make plausible</code> of <code>make fooocus</code>.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>personalproject</span>
+    <a href="https://github.com/fredl92/personalproject" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

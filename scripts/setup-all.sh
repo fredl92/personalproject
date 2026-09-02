@@ -33,9 +33,11 @@ bash scripts/install-cli.sh
 # 3. Docker (if available)
 if command -v docker &>/dev/null; then
   mkdir -p downloads transcripts generated
+  bash scripts/render-dashboard-config.sh 2>/dev/null || true
   docker compose pull -q 2>/dev/null || true
   docker compose up -d
-  echo "✓ Docker services started (n8n + Penpot)"
+  echo "✓ Docker services started (dashboard, n8n + Penpot)"
+  echo "  Dashboard: http://localhost:${DASHBOARD_PORT:-8080}"
 else
   echo "⚠ Docker not found — install Docker to run n8n and Penpot"
   echo "  Ubuntu: curl -fsSL https://get.docker.com | sh"

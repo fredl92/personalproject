@@ -111,7 +111,12 @@ cmd_services() {
   local action="${1:-status}"
   cd "${ROOT}"
   case "${action}" in
-    up)     docker compose up -d ;;
+    up)
+      bash "${ROOT}/scripts/render-dashboard-config.sh"
+      docker compose up -d
+      echo ""
+      echo "Startdashboard: http://localhost:${DASHBOARD_PORT:-8080}"
+      ;;
     down)   docker compose down ;;
     logs)   docker compose logs -f "${2:-}" ;;
     status) docker compose ps ;;
@@ -119,15 +124,27 @@ cmd_services() {
   esac
 }
 
+cmd_dashboard() {
+  bash "${ROOT}/scripts/render-dashboard-config.sh" 2>/dev/null || true
+  local url="http://localhost:${DASHBOARD_PORT:-8080}"
+  echo "Startdashboard: ${url}"
+  if command -v xdg-open &>/dev/null; then
+    xdg-open "${url}" 2>/dev/null || true
+  elif command -v open &>/dev/null; then
+    open "${url}" 2>/dev/null || true
+  fi
+}
+
 cmd_urls() {
   cat <<EOF
 Personal Toolkit — service URLs (when running):
 
-  n8n      http://localhost:${N8N_PORT:-5678}     Workflow automation
-  Penpot   http://localhost:${PENPOT_PORT:-9001}  Design (Figma alt)
-  Plausible http://localhost:8000                 Analytics (after setup-plausible.sh)
-  Ollama   http://localhost:11434                 Local LLM API
-  Fooocus  http://localhost:7865                  Image gen (GPU, after setup-fooocus.sh)
+  Dashboard http://localhost:${DASHBOARD_PORT:-8080}   Startoverzicht (alle apps)
+  n8n       http://localhost:${N8N_PORT:-5678}         Workflow automation
+  Penpot    http://localhost:${PENPOT_PORT:-9001}     Design (Figma alt)
+  Plausible http://localhost:8000                      Analytics (after setup-plausible.sh)
+  Ollama    http://localhost:11434                      Local LLM API
+  Fooocus   http://localhost:7865                       Image gen (GPU, after setup-fooocus.sh)
 EOF
 }
 
@@ -141,6 +158,7 @@ Usage:
   pt ask <prompt> [model]     Chat with local LLM (Ollama)
   pt pipeline <url>           Download → transcribe → summarize
   pt services [up|down|...]   Manage Docker services (n8n, Penpot)
+  pt dashboard                Open start dashboard in browser
   pt urls                     Show service URLs
   pt install                  Run CLI tool installer
 
@@ -162,6 +180,7 @@ main() {
     ask|chat)       cmd_ask "$@" ;;
     pipeline|pipe)  cmd_pipeline "$@" ;;
     services|svc)   cmd_services "$@" ;;
+    dashboard|dash) cmd_dashboard ;;
     urls)           cmd_urls ;;
     install)        bash "${ROOT}/scripts/install-cli.sh" ;;
     help|-h|--help) usage ;;

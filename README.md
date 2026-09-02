@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # personalproject
 
 **Self-hosted open-source stack — no subscriptions, full privacy.**
@@ -13,9 +12,20 @@ One installer bundles the tools that replace paid services:
 | [n8n](https://n8n.io) | Zapier / Make | http://localhost:5678 |
 | [Penpot](https://penpot.app) | Figma | http://localhost:9001 |
 | [Plausible](https://plausible.io) | Google Analytics | http://localhost:8000 |
-| [Fooocus](https://github.com/lllyasviel/Fooocus) | Midjourney | http://localhost:7865 |
+| [Fooocus](https://github.com/lllyasviel/Fooocus) | Midjourney | http://localhost:7865 (GPU) |
+
+Unified CLI (`bin/pt`), Docker Compose for n8n + Penpot, macOS DMG-installer, n8n-workflow templates en Cursor MCP-config voor Penpot.
 
 ## Quick start
+
+### Startdashboard (aanbevolen)
+
+```bash
+make up
+# open http://localhost:8080
+```
+
+Het dashboard toont alle web-apps met live status, directe links en CLI-commando's.
 
 ### macOS (recommended)
 
@@ -58,7 +68,8 @@ pt urls
 ## Project layout
 
 ```
-personal-toolkit/
+personalproject/
+├── dashboard/              Startdashboard (http://localhost:8080)
 ├── bin/pt                  Unified CLI
 ├── docker-compose.yml      n8n + Penpot
 ├── macos/                  DMG installer (macOS)
@@ -70,6 +81,3 @@ personal-toolkit/
 ## License
 
 MIT — see [LICENSE](LICENSE). Upstream tools retain their own licenses.
-=======
-# personalproject
->>>>>>> origin/main

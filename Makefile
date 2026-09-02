@@ -6,7 +6,7 @@ help:
 	@echo "  make setup      Full first-time setup"
 	@echo "  make install    Install CLI tools only (yt-dlp, Ollama, Whisper)"
 	@echo "  make dmg        Build macOS installer DMG"
-	@echo "  make up         Start Docker services (n8n, Penpot)"
+	@echo "  make up         Start Docker services + open dashboard"
 	@echo "  make down       Stop Docker services"
 	@echo "  make logs       Follow service logs"
 	@echo "  make status     Show service status"
@@ -21,7 +21,10 @@ install:
 	bash scripts/install-cli.sh
 
 up:
+	bash scripts/render-dashboard-config.sh
 	docker compose up -d
+	@echo ""
+	@echo "Startdashboard: http://localhost:$${DASHBOARD_PORT:-8080}"
 
 down:
 	docker compose down
