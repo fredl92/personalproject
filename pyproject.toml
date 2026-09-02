@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-toolkit"
+version = "1.0.1"
+description = "Local transcription, Dutch summaries and optional self-hosted modules"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["yt-dlp==2026.08.19", "faster-whisper==1.2.1"]
+
+[project.scripts]
+pt = "personal_toolkit.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

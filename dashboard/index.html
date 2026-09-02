@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Mijn toolkit</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="config.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#task-form">Ga naar je taak</a>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="#main"><span class="logo" aria-hidden="true">◆</span> Mijn toolkit</a>
+      <nav aria-label="Hoofdnavigatie"><a href="#apps">Apps</a><a href="#help">Hulp</a></nav>
+      <span class="local-label">Op je Mac</span>
+    </div>
+  </header>
+
+  <main id="main" class="container">
+    <div class="page-heading"><h1>Wat wil je doen?</h1><p>Kies een taak. Je toolkit helpt je op weg.</p></div>
+    <p id="config-error" class="notice error-notice" role="alert" hidden>De app-links konden niet worden geladen. Voer <code>pt dashboard</code> opnieuw uit in Terminal en herlaad deze pagina. Je kunt hieronder wel een commando voor je taak maken.</p>
+    <noscript><p class="notice">Schakel JavaScript in om taken en app-links te gebruiken.</p></noscript>
+
+    <div class="workspace">
+      <section class="task-panel" aria-labelledby="task-heading">
+        <div id="task-choices" class="task-choices" role="group" aria-label="Kies je taak"></div>
+        <form id="task-form" class="task-form" novalidate>
+          <div class="section-kicker">Je volgende stap</div>
+          <h2 id="task-heading">Samenvatting maken</h2>
+          <p id="task-description" class="muted"></p>
+          <div id="source-field" class="field">
+            <label for="source-kind">Waarvan wil je een samenvatting?</label>
+            <select id="source-kind"><option value="url">Een video via een link</option><option value="file">Een opname op mijn Mac</option></select>
+          </div>
+          <div class="field">
+            <label id="input-label" for="task-input">Videolink</label>
+            <textarea id="task-input" rows="3" spellcheck="false" autocomplete="off" aria-describedby="input-help input-error" required></textarea>
+            <p id="input-help" class="field-help"></p>
+            <p id="input-error" class="field-error" role="alert" hidden></p>
+          </div>
+          <label id="audio-field" class="checkbox-row" hidden><input id="audio-only" type="checkbox" /> Alleen het geluid downloaden</label>
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Maak mijn commando <span aria-hidden="true">→</span></button><span class="field-help">Uitvoeren doe je daarna in Terminal.</span></div>
+          <section id="task-result" class="task-result" aria-labelledby="result-heading" hidden>
+            <h3 id="result-heading" tabindex="-1">Klaar om uit te voeren</h3>
+            <p>Kopieer dit commando, plak het in Terminal en druk op Enter.</p>
+            <div class="command-box"><code id="generated-command"></code><button id="copy-command" type="button" class="btn btn-primary">Kopieer commando</button></div>
+            <p id="result-help" class="field-help"></p>
+            <details class="terminal-help"><summary>Waar vind ik Terminal?</summary><p>Druk op <kbd>⌘</kbd> + <kbd>spatie</kbd>, typ <strong>Terminal</strong> en druk op Enter. Plak met <kbd>⌘</kbd> + <kbd>V</kbd>.</p></details>
+          </section>
+        </form>
+      </section>
+
+      <aside class="sidebar" aria-label="Hulp bij je taak">
+        <section class="panel ai-panel" aria-labelledby="ai-heading"><span class="section-kicker">Voor vragen en samenvattingen</span><h2 id="ai-heading">Je lokale AI</h2><div id="ai-status"></div><p class="muted">Ollama voert het taalmodel uit. Het antwoord verschijnt in Terminal.</p><button class="btn btn-secondary" type="button" data-help="ollama">Hulp bij je AI</button></section>
+        <section class="panel" id="help" aria-labelledby="help-heading"><h2 id="help-heading">Eerste keer?</h2><ol class="steps"><li><strong>Kies je taak</strong><span>Vul een vraag, link of bestandspad in.</span></li><li><strong>Kopieer het commando</strong><span>De juiste opdracht staat voor je klaar.</span></li><li><strong>Plak in Terminal</strong><span>Druk op Enter om te starten.</span></li></ol><details class="terminal-help"><summary>Mijn bestandspad vinden</summary><p>Selecteer je opname in Finder. Druk op <kbd>⌥</kbd> + <kbd>⌘</kbd> + <kbd>C</kbd> om het volledige pad te kopiëren. Plak dat in het invoerveld.</p></details><p class="privacy-note">Je invoer wordt niet in dit dashboard opgeslagen.</p></section>
+      </aside>
+    </div>
+
+    <section id="apps" class="apps-section" aria-labelledby="apps-heading">
+      <div class="section-heading"><div><h2 id="apps-heading">Je apps</h2><p class="muted">Open een app, of bekijk hoe je die start.</p></div><div class="refresh-controls"><button id="refresh-btn" class="btn btn-secondary" type="button">Controleer apps</button><span id="updated-at" class="field-help" aria-live="polite"></span></div></div>
+      <div id="app-grid" class="app-grid"></div>
+      <p class="status-note">“Niet bevestigd” betekent niet altijd dat een app uit staat. Je browser kan de controle blokkeren. Gebruik dan Openen of Hulp bij starten.</p>
+      <details class="extra-apps"><summary>Meer mogelijkheden <span>Beelden maken en bezoekersstatistieken</span></summary><div id="extra-grid" class="app-grid"></div></details>
+    </section>
+
+    <details class="advanced"><summary>Geavanceerd: commando’s en adressen</summary><div class="advanced-content"><ul class="cli-list" id="cli-list"></ul><div><h3>Adressen van je apps</h3><ul class="address-list" id="address-list"></ul><p class="field-help">Voor een algemene controle: <code>pt doctor</code>.</p></div></div></details>
+  </main>
+
+  <footer class="footer"><span>Personal Toolkit</span><span>Een taak tegelijk. Jij bepaalt wat er draait.</span></footer>
+  <div id="copy-message" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="help-dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><h2 id="dialog-title"></h2><button id="close-help" class="btn btn-secondary" type="button" aria-label="Hulp sluiten">Sluiten</button></div><div id="dialog-content"></div></dialog>
+  <script src="app.js"></script>
+</body>
+</html>

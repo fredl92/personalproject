@@ -1,0 +1,6 @@
+**
+!docker/
+!docker/worker.Dockerfile
+!src/
+!src/**
+!requirements.txt

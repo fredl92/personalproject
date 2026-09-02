@@ -1,0 +1,11 @@
+Personal Toolkit 1.0.1 — macOS
+
+1. Homebrew moet aanwezig zijn (https://brew.sh).
+2. Open PersonalToolkit-Installer en bevestig de installatie.
+3. Terminal voert de kerninstallatie uit. Alleen bij succes verschijnt de voltooiingsmelding.
+4. Open een nieuw Terminal-venster: pt doctor
+5. Test: pt pipeline "/pad/naar/korte-opname.wav"
+
+Bestaande instellingen, modellen en gebruikersbestanden blijven behouden.
+Docker, Penpot, n8n, Plausible en Fooocus zijn optioneel.
+Zie README.md en docs/ voor installatie en bekende beperkingen.

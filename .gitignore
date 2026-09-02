@@ -1,0 +1,27 @@
+# Secrets & local data
+.env
+.venv/
+downloads/
+transcripts/
+generated/
+dist/
+data/
+dashboard/config.js
+
+# Agent / build artifacts (not part of the project)
+assets/
+agent-tools/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# OS
+.DS_Store
+
+# Optional upstream checkouts and model caches
+services/
+.cache/
+.env.*
+!.env.example
