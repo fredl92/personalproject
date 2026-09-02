@@ -10,12 +10,9 @@ dependencies = [
   "faster-whisper",
 ]
 
-[project.scripts]
-pt = "bin.pt:main"
-
 [project.urls]
-Homepage = "https://github.com/fredericdelaet1/personal-toolkit"
-Repository = "https://github.com/fredericdelaet1/personal-toolkit"
+Homepage = "https://github.com/YOUR_USER/personal-toolkit"
+Repository = "https://github.com/YOUR_USER/personal-toolkit"
 
 [tool.personal-toolkit]
 services = ["n8n", "penpot", "plausible", "ollama", "fooocus"]
