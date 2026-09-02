@@ -1,23 +1,5 @@
 "use strict";
 
-const APP_META = {
-  n8n: { icon: "⚡", title: "n8n", desc: "Koppel apps en AI in workflows.", command: "pt services up automation" },
-  penpot: { icon: "🎨", title: "Penpot", desc: "Ontwerpen en prototypes maken.", command: "pt services up design" },
-  plausible: { icon: "📊", title: "Plausible", desc: "Bezoekersstatistieken voor je websites.", command: "make plausible" },
-  ollama: { icon: "🦙", title: "Ollama", desc: "De lokale modelserver voor de CLI. De Docker-workflow gebruikt een aparte server." },
-  fooocus: { icon: "🖼️", title: "Fooocus", desc: "Beelden genereren. Op Apple Silicon experimenteel.", command: "make fooocus" },
-  dashboard: { icon: "◆", title: "Dashboard", desc: "Dit startoverzicht.", command: "pt dashboard" },
-};
-const CLI_COMMANDS = [
-  { label: "Video downloaden", cmd: "pt download <url>" },
-  { label: "Transcriberen (Whisper)", cmd: "pt transcribe <bestand>" },
-  { label: "Vraag stellen (Ollama)", cmd: 'pt ask "jouw vraag"' },
-  { label: "Downloaden en samenvatten", cmd: "pt pipeline <url>" },
-  { label: "Automatisering starten", cmd: "pt services up automation" },
-  { label: "Ontwerpmodule starten", cmd: "pt services up design" },
-  { label: "Alle links tonen", cmd: "pt urls" },
-];
-
 function safeUrl(value) {
   const url = new URL(value);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
@@ -47,6 +29,66 @@ async function checkStatus(url, fetcher = fetch, timeout = 4000) {
   }
 }
 
+const TASKS = {
+  pipeline: { title: "Samenvatting maken", short: "Samenvatten", icon: "≋", description: "Maak een transcript en Nederlandse samenvatting van een video of opname.", result: "De eerste verwerking kan even duren. Terminal toont waar het transcript en de samenvatting zijn opgeslagen." },
+  transcribe: { title: "Opname uitschrijven", short: "Uitschrijven", icon: "↳", description: "Zet een audio- of videobestand om naar tekst met tijdsaanduidingen.", result: "Terminal toont het pad naar je tekstbestand. Het spraakmodel wordt bij het eerste gebruik gedownload." },
+  download: { title: "Video downloaden", short: "Downloaden", icon: "↓", description: "Bewaar een video of alleen het geluid op je Mac.", result: "Terminal toont waar je download is opgeslagen." },
+  ask: { title: "Vraag aan je AI", short: "Vraag stellen", icon: "✦", description: "Laat je lokale AI iets uitleggen, ideeën geven of een tekst helpen schrijven.", result: "Het antwoord verschijnt in Terminal. Controleer belangrijke feiten altijd zelf." },
+};
+const APP_META = {
+  n8n: { title: "Taken automatiseren", name: "n8n", description: "Verbind je apps en laat terugkerende taken samenwerken.", command: "pt services up automation", help: "Open eerst Docker Desktop en wacht tot het draait. Plak daarna deze opdracht in Terminal. De eerste start downloadt ook een taalmodel en kan enkele minuten duren." },
+  penpot: { title: "Ontwerpen maken", name: "Penpot", description: "Werk aan een ontwerp, scherm of klikbaar prototype.", command: "pt services up design", help: "Open eerst Docker Desktop en wacht tot het draait. Plak deze opdracht in Terminal en wacht tot de diensten gestart zijn." },
+  plausible: { title: "Websitebezoekers bekijken", name: "Plausible", description: "Bekijk het bezoek aan een website die je zelf beheert.", command: 'cd "$HOME/PersonalToolkit" && make plausible', help: "Open Docker Desktop. Deze opdracht bereidt Plausible voor; voer daarna de startopdracht uit die Terminal toont. Dit gaat uit van de standaardinstallatie in ~/PersonalToolkit." },
+  fooocus: { title: "Beelden maken", name: "Fooocus", description: "Genereer beelden op je eigen computer. Op Apple Silicon experimenteel.", command: 'cd "$HOME/PersonalToolkit" && make fooocus', help: "Deze opdracht bereidt de optionele installatie voor. Voer daarna de startopdracht uit die Terminal toont. Er worden extra bestanden en modellen gedownload. Dit gaat uit van de standaardinstallatie in ~/PersonalToolkit." },
+  ollama: { title: "Je lokale AI starten", name: "Ollama", command: "brew services start ollama", help: "Ollama draait normaal na de installatie al op de achtergrond. Start de dienst zo nodig met deze opdracht. Gebruik daarna pt doctor om de installatie en het taalmodel te controleren." },
+  dashboard: { name: "Dashboard" },
+};
+const CLI_COMMANDS = [
+  { label: "Video downloaden", cmd: "pt download <url>" },
+  { label: "Opname uitschrijven", cmd: "pt transcribe <bestand>" },
+  { label: "Vraag stellen", cmd: 'pt ask "jouw vraag"' },
+  { label: "Samenvatting maken", cmd: "pt pipeline <url>" },
+  { label: "Automatisering starten", cmd: "pt services up automation" },
+  { label: "Ontwerpen starten", cmd: "pt services up design" },
+  { label: "Installatie controleren", cmd: "pt doctor" },
+  { label: "Alle adressen tonen", cmd: "pt urls" },
+];
+
+function shellQuote(value) {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+function mediaUrl(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error("Plak een volledige videolink die begint met https:// of http://."); }
+  if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password || /\s/.test(value)) {
+    throw new Error("Gebruik een http(s)-videolink zonder spaties, gebruikersnaam of wachtwoord.");
+  }
+  return shellQuote(value);
+}
+
+function mediaPath(value) {
+  if (!value.startsWith("/") && !value.startsWith("~/")) {
+    throw new Error("Plak het volledige bestandspad uit Finder. Selecteer het bestand en druk op ⌥ + ⌘ + C.");
+  }
+  if (value === "/" || value === "~/") throw new Error("Kies een bestand, niet alleen je thuismap.");
+  return value.startsWith("~/") ? '"$HOME"/' + shellQuote(value.slice(2)) : shellQuote(value);
+}
+
+function createCommand(task, input, { source = "url", audio = false } = {}) {
+  if (!Object.hasOwn(TASKS, task)) throw new Error("Kies eerst een taak.");
+  const value = typeof input === "string" ? input.trim() : "";
+  if (!value) throw new Error(task === "ask" ? "Vul eerst je vraag in." : "Vul eerst een link of bestandspad in.");
+  if (/[\x00-\x08\x0b-\x1f\x7f]/.test(value) || (task !== "ask" && /[\r\n\t]/.test(value))) {
+    throw new Error("Verwijder onzichtbare tekens en plak de invoer opnieuw.");
+  }
+  if (task === "ask") return "pt ask -- " + shellQuote(value);
+  if (task === "download") return "pt download " + mediaUrl(value) + (audio ? " --audio" : "");
+  if (task === "transcribe") return "pt transcribe " + mediaPath(value);
+  if (!["url", "file"].includes(source)) throw new Error("Kies een video of opname als bron.");
+  return "pt pipeline " + (source === "file" ? mediaPath(value) : mediaUrl(value));
+}
+
 function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -54,117 +96,258 @@ function element(tag, className, text) {
   return node;
 }
 
-function copyButton(value, label) {
-  const button = element("button", "btn btn-copy", "⎘");
+function copyButton(value, label = "Kopieer", accessibleLabel = label) {
+  const button = element("button", "btn btn-secondary", label);
   button.type = "button";
   button.dataset.copy = value;
-  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-label", accessibleLabel);
   return button;
 }
 
-function renderCards(cfg) {
-  const grid = document.getElementById("app-grid");
-  grid.replaceChildren();
-  for (const key of ["n8n", "penpot", "plausible", "ollama", "fooocus", "dashboard"]) {
+let selectedTask = "pipeline";
+let currentConfig = null;
+let refreshBusy = false;
+let toastTimer;
+
+function invalidateResult() {
+  document.getElementById("task-result").hidden = true;
+  document.getElementById("generated-command").textContent = "";
+  delete document.getElementById("copy-command").dataset.copy;
+  document.getElementById("input-error").hidden = true;
+  document.getElementById("task-input").removeAttribute("aria-invalid");
+}
+
+function configureInput() {
+  const file = selectedTask === "transcribe" || (selectedTask === "pipeline" && document.getElementById("source-kind").value === "file");
+  const ask = selectedTask === "ask";
+  document.getElementById("source-field").hidden = selectedTask !== "pipeline";
+  document.getElementById("audio-field").hidden = selectedTask !== "download";
+  document.getElementById("input-label").textContent = ask ? "Je vraag" : file ? "Bestandspad van je opname" : "Videolink";
+  const input = document.getElementById("task-input");
+  input.placeholder = ask ? "Bijvoorbeeld: leg obligatieduration uit in eenvoudige woorden." : file ? "/Users/…/Documents/opname.m4a" : "https://www.youtube.com/watch?v=…";
+  input.rows = ask ? 4 : 2;
+  document.getElementById("input-help").textContent = ask ? "Stel je vraag in gewone taal." : file ? "Selecteer de opname in Finder, druk op ⌥ + ⌘ + C en plak het pad hier. Je uploadt geen bestand." : "Plak de link van de video die je wilt verwerken.";
+  invalidateResult();
+}
+
+function selectTask(task, focus = true) {
+  selectedTask = task;
+  for (const button of document.querySelectorAll("[data-task]")) button.setAttribute("aria-pressed", String(button.dataset.task === task));
+  document.getElementById("task-heading").textContent = TASKS[task].title;
+  document.getElementById("task-description").textContent = TASKS[task].description;
+  document.getElementById("task-input").value = "";
+  configureInput();
+  if (focus) document.getElementById("task-input").focus();
+}
+
+function bindTasks() {
+  const choices = document.getElementById("task-choices");
+  for (const [key, task] of Object.entries(TASKS)) {
+    const button = element("button", "task-choice");
+    button.type = "button";
+    button.dataset.task = key;
+    button.setAttribute("aria-pressed", String(key === selectedTask));
+    const icon = element("span", "task-icon", task.icon);
+    icon.setAttribute("aria-hidden", "true");
+    button.append(icon, element("span", "", task.short));
+    button.addEventListener("click", () => selectTask(key));
+    choices.append(button);
+  }
+  selectTask(selectedTask, false);
+  document.getElementById("source-kind").addEventListener("change", configureInput);
+  document.getElementById("audio-only").addEventListener("change", invalidateResult);
+  document.getElementById("task-input").addEventListener("input", invalidateResult);
+  document.getElementById("task-form").addEventListener("submit", event => {
+    event.preventDefault();
+    invalidateResult();
+    try {
+      const command = createCommand(selectedTask, document.getElementById("task-input").value, {
+        source: document.getElementById("source-kind").value, audio: document.getElementById("audio-only").checked,
+      });
+      document.getElementById("generated-command").textContent = command;
+      document.getElementById("copy-command").dataset.copy = command;
+      document.getElementById("result-help").textContent = TASKS[selectedTask].result;
+      document.getElementById("task-result").hidden = false;
+      document.getElementById("result-heading").focus();
+    } catch (error) {
+      const message = document.getElementById("input-error");
+      message.textContent = error.message;
+      message.hidden = false;
+      document.getElementById("task-input").setAttribute("aria-invalid", "true");
+      document.getElementById("task-input").focus();
+    }
+  });
+}
+
+function statusElements(target, app, key) {
+  target.dataset.healthUrl = safeUrl(app.healthUrl || app.url);
+  target.dataset.key = key;
+  const badge = element("span", "status checking", "Controleren…");
+  badge.dataset.status = "";
+  const detail = element("p", "status-detail", "");
+  detail.dataset.statusDetail = "";
+  return { badge, detail };
+}
+
+function renderApps(cfg) {
+  for (const key of ["n8n", "penpot", "plausible", "fooocus"]) {
     const app = cfg.apps[key];
-    const meta = APP_META[key];
     if (!app) continue;
-    const url = safeUrl(app.url);
-    const card = element("article", "card" + (app.optional ? " optional" : ""));
-    card.dataset.url = url;
-    card.dataset.healthUrl = safeUrl(app.healthUrl || app.url);
-    card.dataset.key = key;
-    const top = element("div", "card-top");
-    const badge = element("span", "badge checking", "Controleren");
-    badge.dataset.status = "";
-    top.append(element("div", "card-icon", meta.icon), badge);
-    const title = element("h3", "", meta.title);
-    if (app.optional) title.append(" ", element("span", "badge optional-tag", "optioneel"));
+    const meta = APP_META[key];
+    const card = element("article", "app-card");
+    const { badge, detail } = statusElements(card, app, key);
+    const heading = element("div", "card-heading");
+    heading.append(element("h3", "", meta.title), badge);
+    card.append(element("span", "app-name", meta.name), heading, element("p", "", meta.description), detail);
     const actions = element("div", "card-actions");
-    const link = element("a", "btn btn-primary", "Openen");
-    link.href = url;
+    const link = element("a", "btn btn-primary", "Open " + meta.name);
+    link.href = safeUrl(app.url);
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    actions.append(link, copyButton(url, `Link naar ${meta.title} kopiëren`));
-    card.append(top, title, element("p", "desc", meta.desc), element("p", "url", url));
-    if (meta.command) card.append(element("code", "start-command", meta.command));
+    const help = element("button", "btn btn-secondary", "Hulp bij starten");
+    help.type = "button";
+    help.dataset.help = key;
+    help.setAttribute("aria-label", meta.name + ": hulp bij starten");
+    actions.append(link, help);
     card.append(actions);
-    grid.append(card);
+    document.getElementById(["plausible", "fooocus"].includes(key) ? "extra-grid" : "app-grid").append(card);
+  }
+  if (cfg.apps.ollama) {
+    const target = document.getElementById("ai-status");
+    const { badge, detail } = statusElements(target, cfg.apps.ollama, "ollama");
+    target.append(badge, detail);
+  }
+  const addresses = document.getElementById("address-list");
+  for (const [key, app] of Object.entries(cfg.apps)) {
+    const item = element("li");
+    const link = element("a", "", safeUrl(app.url));
+    link.href = safeUrl(app.url);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    item.append((APP_META[key]?.name || key) + ": ", link);
+    addresses.append(item);
   }
 }
 
 function renderCli() {
   const list = document.getElementById("cli-list");
-  list.replaceChildren();
   for (const command of CLI_COMMANDS) {
     const item = element("li", "cli-item");
     const text = element("span");
     text.append(command.label, element("br"), element("code", "", command.cmd));
-    item.append(text, copyButton(command.cmd, `${command.label}: commando kopiëren`));
+    item.append(text, copyButton(command.cmd, "Kopieer", command.label + ": commando kopiëren"));
     list.append(item);
   }
 }
 
-let refreshing = false;
 async function refreshStatus() {
-  if (refreshing) return;
-  refreshing = true;
-  const refresh = document.getElementById("refresh-btn");
-  refresh.disabled = true;
+  if (refreshBusy) return;
+  refreshBusy = true;
+  const button = document.getElementById("refresh-btn");
+  button.disabled = true;
+  button.textContent = "Controleren…";
   try {
-    await Promise.all([...document.querySelectorAll(".card[data-url]")].map(async (card) => {
-      const badge = card.querySelector("[data-status]");
-      badge.className = "badge checking";
-      badge.textContent = "Controleren";
-      const status = await checkStatus(card.dataset.healthUrl);
-      badge.className = "badge " + status.state;
+    await Promise.all([...document.querySelectorAll("[data-health-url]")].map(async target => {
+      const badge = target.querySelector("[data-status]");
+      const detail = target.querySelector("[data-status-detail]");
+      badge.className = "status checking";
+      badge.textContent = "Controleren…";
+      detail.textContent = "";
+      const status = await checkStatus(target.dataset.healthUrl);
+      badge.className = "status " + status.state;
       badge.textContent = status.label;
       badge.title = status.detail;
+      detail.textContent = status.state === "online" ? "De dienst antwoordt. Je kunt verder." : target.dataset.key === "ollama" ? "Controleer je AI via de hulpknop hieronder." : status.state === "error" ? "Er is een fout. Bekijk de starthulp." : "Probeer Openen of bekijk de starthulp.";
     }));
-    document.getElementById("updated-at").textContent = "Bijgewerkt " + new Date().toLocaleTimeString("nl-BE");
+    document.getElementById("updated-at").textContent = "Gecontroleerd om " + new Date().toLocaleTimeString("nl-BE", { hour: "2-digit", minute: "2-digit" });
   } finally {
-    refreshing = false;
-    refresh.disabled = false;
+    refreshBusy = false;
+    button.disabled = false;
+    button.textContent = "Controleer apps";
   }
 }
 
-function bindCopy() {
-  document.body.addEventListener("click", async (event) => {
+function showToast(text) {
+  const toast = document.getElementById("copy-message");
+  clearTimeout(toastTimer);
+  toast.textContent = text;
+  toast.hidden = false;
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 5000);
+}
+
+function showHelp(key) {
+  const meta = APP_META[key];
+  if (!meta?.help) return;
+  const dialog = document.getElementById("help-dialog");
+  document.getElementById("dialog-title").textContent = meta.title;
+  const content = document.getElementById("dialog-content");
+  content.replaceChildren(element("p", "", meta.help));
+  const box = element("div", "command-box");
+  box.append(element("code", "", meta.command), copyButton(meta.command, "Kopieer startopdracht"));
+  content.append(box, element("p", "", "Open Terminal via ⌘ + spatie, plak met ⌘ + V en druk op Enter."));
+  if (key === "ollama") content.append(copyButton("pt doctor", "Kopieer controleopdracht"));
+  const app = currentConfig?.apps[key];
+  if (app && key !== "ollama") {
+    const link = element("a", "btn btn-primary", "Open " + meta.name);
+    link.href = safeUrl(app.url);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    content.append(link);
+  }
+  if (!dialog.open) dialog.showModal();
+}
+
+function manualCopy(value) {
+  const dialog = document.getElementById("help-dialog");
+  document.getElementById("dialog-title").textContent = "Kopieer de geselecteerde tekst";
+  const content = document.getElementById("dialog-content");
+  const input = element("textarea", "manual-copy");
+  input.value = value;
+  input.readOnly = true;
+  input.setAttribute("aria-label", "Commando om handmatig te kopiëren");
+  content.replaceChildren(element("p", "", "Automatisch kopiëren lukt niet. Druk op ⌘ + C en plak de tekst in Terminal."), input);
+  if (!dialog.open) dialog.showModal();
+  input.focus();
+  input.select();
+}
+
+function bindActions() {
+  document.getElementById("close-help").addEventListener("click", () => document.getElementById("help-dialog").close());
+  document.body.addEventListener("click", async event => {
+    const help = event.target.closest("[data-help]");
+    if (help) { showHelp(help.dataset.help); return; }
     const button = event.target.closest("[data-copy]");
     if (!button) return;
-    const message = document.getElementById("copy-message");
+    const value = button.dataset.copy;
+    button.disabled = true;
     try {
-      await navigator.clipboard.writeText(button.dataset.copy);
-      message.textContent = "Gekopieerd.";
-      button.textContent = "✓";
-      setTimeout(() => { button.textContent = "⎘"; }, 1200);
-    } catch {
-      message.textContent = "Kopiëren lukt niet. Selecteer en kopieer de tekst zelf: " + button.dataset.copy;
-    }
+      await navigator.clipboard.writeText(value);
+      showToast("Gekopieerd. Plak in Terminal en druk op Enter.");
+    } catch { manualCopy(value); }
+    finally { button.disabled = false; }
   });
 }
 
 function init() {
+  bindTasks();
+  bindActions();
+  renderCli();
   const cfg = window.DASHBOARD_CONFIG;
-  if (!cfg || !cfg.apps || !cfg.apps.dashboard) {
-    document.getElementById("config-error").hidden = false;
-    document.getElementById("refresh-btn").disabled = true;
-    return;
-  }
   try {
-    renderCards(cfg);
-    renderCli();
-    document.getElementById("dashboard-url").textContent = safeUrl(cfg.apps.dashboard.url);
+    if (!cfg?.apps?.dashboard) throw new Error("Missing configuration");
+    for (const app of Object.values(cfg.apps)) { safeUrl(app.url); if (app.healthUrl) safeUrl(app.healthUrl); }
+    currentConfig = cfg;
+    renderApps(cfg);
   } catch {
     document.getElementById("config-error").hidden = false;
     document.getElementById("refresh-btn").disabled = true;
+    document.getElementById("ai-status").textContent = "Status niet beschikbaar";
     return;
   }
-  bindCopy();
   refreshStatus();
   document.getElementById("refresh-btn").addEventListener("click", refreshStatus);
-  setInterval(refreshStatus, 60000);
+  setInterval(() => { if (!document.hidden) refreshStatus(); }, 60000);
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS };
+if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote };
 if (typeof document !== "undefined") init();

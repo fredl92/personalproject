@@ -12,6 +12,7 @@
 - Samenvoegen van Cursor-configuratie zonder verlies van bestaande servers.
 - Dashboardconfiguratie zonder shell-uitvoering of geheime waarden; aangepaste poorten en afzonderlijke start van de dashboardmodule.
 - Browserstatus: HTTP-fouten, afgeschermde antwoorden, verbindingsfouten en time-outs worden niet als succesvol weergegeven.
+- Taakcommando's: echte shell-parsing van vragen en bestandsnamen met quotes, spaties, Unicode en shelltekens; videolinks met queryparameters, audioselectie, thuismappen en ongeldige invoer.
 - Dashboardbestanden gaan mee in de installer; gegenereerde lokale dashboardconfiguratie blijft uitgesloten.
 
 Deze regressietests gebruiken modeldoubles; ze meten geen herkenningskwaliteit of modelsnelheid.

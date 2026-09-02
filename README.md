@@ -40,7 +40,9 @@ pt dashboard
 # Of: make up en open http://localhost:8080
 ```
 
-Het dashboard bevat links naar alle apps en kopieerbare CLI-commando's. Alleen het dashboard wordt gestart; kies de andere modules hieronder wanneer nodig. `pt dashboard --no-open` start zonder een browser te openen. `DASHBOARD_PORT` wijzigt de poort; de binding blijft beperkt tot localhost. Stop met `pt services down dashboard`.
+Het dashboard begint met vier taken: samenvatten, uitschrijven, downloaden en een vraag stellen. Vul je vraag, videolink of volledig bestandspad in en klik op **Maak mijn commando**. Kopieer de gemaakte opdracht naar Terminal en druk op Enter. De browser voert geen opdrachten uit en bewaart je invoer niet. Bij een bestand gebruik je het volledige pad uit Finder (⌥ + ⌘ + C); er is geen upload.
+
+Bij elke app vind je **Openen** en gerichte **Hulp bij starten**. Extra tools en technische adressen staan ingeklapt. Kopiëren geeft directe bevestiging, met een handmatige uitweg als de browser het klembord blokkeert. Alleen het dashboard wordt gestart; kies de andere modules hieronder wanneer nodig. `pt dashboard --no-open` start zonder een browser te openen. `DASHBOARD_PORT` wijzigt de poort; de binding blijft beperkt tot localhost. Stop met `pt services down dashboard`.
 
 “Bereikbaar” bevestigt alleen een succesvol HTTP-antwoord. HTTP-fouten worden apart getoond. Sommige apps staan controles vanuit een andere browserpoort niet toe (CORS); ook een onbereikbare of trage app krijgt daarom “Niet bevestigd”. Gebruik dan de knop Openen. De Ollama-kaart verwijst naar de native CLI-server, niet naar de interne Docker-server.
 
