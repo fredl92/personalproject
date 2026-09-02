@@ -58,21 +58,23 @@ if [[ "$(uname -s)" == "Darwin" ]] && command -v hdiutil &>/dev/null; then
   rm -f "${SCRATCH}"
   trap - EXIT
 
-elif command -v genisoimage &>/dev/null; then
-  echo "    Using genisoimage (Linux fallback)..."
-  echo "    NOTE: For a native macOS DMG, run 'make dmg' on a Mac."
+elif [[ "${FORCE_LINUX_DMG:-}" == "1" ]] && command -v genisoimage &>/dev/null; then
+  echo "    WARNING: Linux DMG is a preview ISO — build on macOS for a working installer."
   genisoimage -V "Personal Toolkit" -D -R -apple -joliet-long -no-pad \
     -o "${DMG_PATH}" "${STAGING}/"
 
-elif command -v mkisofs &>/dev/null; then
-  echo "    Using mkisofs (Linux fallback)..."
-  mkisofs -V "Personal Toolkit" -D -R -apple -no-pad \
-    -o "${DMG_PATH}" "${STAGING}/"
+elif [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "ERROR: Native DMG requires macOS (uses hdiutil)." >&2
+  echo "" >&2
+  echo "  On your Mac, run:" >&2
+  echo "    make dmg" >&2
+  echo "  Or double-click: macos/Build-DMG.command" >&2
+  echo "" >&2
+  echo "  Staged files are at: ${STAGING}" >&2
+  exit 1
 
 else
-  echo "ERROR: Need macOS (hdiutil) or genisoimage/mkisofs to build DMG." >&2
-  echo "  macOS:  brew install --cask (nothing extra needed)" >&2
-  echo "  Linux:  sudo apt-get install genisoimage" >&2
+  echo "ERROR: hdiutil not found." >&2
   exit 1
 fi
 

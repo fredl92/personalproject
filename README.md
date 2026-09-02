@@ -16,13 +16,19 @@ A unified setup for the open-source tools from your stack — all self-hosted, n
 
 ### macOS — easiest (DMG installer)
 
+On your Mac:
+
 ```bash
-make dmg                        # build Personal-Toolkit-1.0.0.dmg
+make dmg                        # builds dist/Personal-Toolkit-1.0.0.dmg
 open dist/Personal-Toolkit-1.0.0.dmg
 ```
 
+Or double-click `macos/Build-DMG.command`.
+
 Double-click **PersonalToolkit-Installer**, confirm, and wait for Terminal to finish.
 Everything lands in `~/PersonalToolkit` with `pt` added to your shell.
+
+> DMG must be built on macOS (uses `hdiutil`). A GitHub Actions workflow at `.github/workflows/build-dmg.yml` can produce it automatically when you push the repo to GitHub.
 
 ### Linux / manual
 
