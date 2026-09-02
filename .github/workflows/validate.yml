@@ -2,7 +2,7 @@ name: Toolkit validation
 on:
   pull_request:
   push:
-    branches: [main, 'fix/**']
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read

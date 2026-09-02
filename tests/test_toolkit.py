@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class Workspace(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='toolkit review ')
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
         (self.root / '.env.example').write_text((ROOT / '.env.example').read_text())
         initialize(self.root)
         self.settings = Settings(self.root, environ={})

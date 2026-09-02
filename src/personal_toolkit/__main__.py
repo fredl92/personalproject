@@ -94,7 +94,8 @@ def main(argv=None):
         elif args.command == "ask":
             if args.model:
                 settings.values["OLLAMA_MODEL"] = args.model
-            print(generate(args.prompt, settings, "Beantwoord deze vraag in het Nederlands."))
+            print(generate(args.prompt, settings, "Beantwoord deze vraag in het Nederlands.",
+                           system="Je bent een behulpzame assistent. Benoem onzekerheid en verzin geen feiten."))
         elif args.command == "pipeline":
             jobs = JobStore(settings.path("JOBS_DIR"))
             job = jobs.create(args.source)
