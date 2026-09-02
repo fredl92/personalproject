@@ -19,8 +19,8 @@ One installer bundles the tools that replace paid services:
 ### macOS (recommended)
 
 ```bash
-git clone https://github.com/YOUR_USER/personal-toolkit.git
-cd personal-toolkit
+git clone https://github.com/fredl92/personalproject.git
+cd personalproject
 make dmg
 open dist/Personal-Toolkit-1.0.0.dmg
 ```
@@ -30,8 +30,8 @@ Double-click **PersonalToolkit-Installer** → everything installs to `~/Persona
 ### Linux
 
 ```bash
-git clone https://github.com/YOUR_USER/personal-toolkit.git
-cd personal-toolkit
+git clone https://github.com/fredl92/personalproject.git
+cd personalproject
 cp .env.example .env
 make setup
 ```

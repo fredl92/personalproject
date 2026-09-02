@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
-REPO_NAME="${1:-personal-toolkit}"
+REPO_NAME="${1:-personalproject}"
 VISIBILITY="${2:-private}"
 
 if ! gh auth status &>/dev/null; then

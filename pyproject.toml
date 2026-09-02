@@ -11,8 +11,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USER/personal-toolkit"
-Repository = "https://github.com/YOUR_USER/personal-toolkit"
+Homepage = "https://github.com/fredl92/personalproject"
+Repository = "https://github.com/fredl92/personalproject"
 
 [tool.personal-toolkit]
 services = ["n8n", "penpot", "plausible", "ollama", "fooocus"]
