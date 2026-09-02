@@ -1,7 +1,7 @@
 Personal Toolkit — macOS Install
 ================================
 
-1. Double-click "Install Personal Toolkit"
+1. Double-click "PersonalToolkit-Installer"
 2. Click Install in the dialog
 3. Wait for Terminal to finish setup
 

@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${VERSION:-1.0.0}"
 DIST="${ROOT}/dist"
 STAGING="${DIST}/dmg-staging"
-APP_NAME="Install Personal Toolkit.app"
+APP_NAME="PersonalToolkit-Installer.app"
 DMG_NAME="Personal-Toolkit-${VERSION}.dmg"
 DMG_PATH="${DIST}/${DMG_NAME}"
 
@@ -59,8 +59,9 @@ if [[ "$(uname -s)" == "Darwin" ]] && command -v hdiutil &>/dev/null; then
   trap - EXIT
 
 elif command -v genisoimage &>/dev/null; then
-  echo "    Using genisoimage (Linux fallback — open on macOS with double-click)..."
-  genisoimage -V "Personal Toolkit" -D -R -apple -no-pad \
+  echo "    Using genisoimage (Linux fallback)..."
+  echo "    NOTE: For a native macOS DMG, run 'make dmg' on a Mac."
+  genisoimage -V "Personal Toolkit" -D -R -apple -joliet-long -no-pad \
     -o "${DMG_PATH}" "${STAGING}/"
 
 elif command -v mkisofs &>/dev/null; then
@@ -87,4 +88,4 @@ echo "✓ Built: ${DMG_PATH}"
 echo "  Size:  $(du -h "${DMG_PATH}" | cut -f1)"
 echo ""
 echo "On Mac: open ${DMG_PATH}"
-echo "        Double-click 'Install Personal Toolkit'"
+echo "        Double-click 'PersonalToolkit-Installer'"

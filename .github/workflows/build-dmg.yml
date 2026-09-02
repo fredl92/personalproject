@@ -1,0 +1,26 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build DMG
+        run: |
+          chmod +x macos/build-dmg.sh macos/PersonalToolkit-Installer.app/Contents/MacOS/install scripts/*.sh bin/pt
+          bash macos/build-dmg.sh
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Personal-Toolkit-dmg
+          path: |
+            dist/*.dmg
+            dist/*.sha256

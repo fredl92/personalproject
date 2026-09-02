@@ -21,7 +21,7 @@ make dmg                        # build Personal-Toolkit-1.0.0.dmg
 open dist/Personal-Toolkit-1.0.0.dmg
 ```
 
-Double-click **Install Personal Toolkit**, confirm, and wait for Terminal to finish.
+Double-click **PersonalToolkit-Installer**, confirm, and wait for Terminal to finish.
 Everything lands in `~/PersonalToolkit` with `pt` added to your shell.
 
 ### Linux / manual
