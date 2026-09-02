@@ -1,19 +1,20 @@
-# Downloads, transcripts, generated files, secrets
+# Secrets & local data
 .env
-data/
+.venv/
 downloads/
 transcripts/
 generated/
-.venv/
-services/plausible/
-services/fooocus/
+dist/
+data/
+
+# Agent / build artifacts (not part of the project)
+assets/
+agent-tools/
 
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
 
 # OS
 .DS_Store
-dist/
-*.dmg
-*.dmg.sha256
