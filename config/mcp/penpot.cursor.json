@@ -1,12 +1,5 @@
 {
   "mcpServers": {
-    "penpot": {
-      "command": "npx",
-      "args": ["-y", "@penpot/mcp-server"],
-      "env": {
-        "PENPOT_API_URL": "http://localhost:9001",
-        "PENPOT_ACCESS_TOKEN": "YOUR_PENPOT_ACCESS_TOKEN"
-      }
-    }
+    "penpot": {"url": "http://localhost:4401/mcp"}
   }
 }

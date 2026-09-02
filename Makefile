@@ -1,60 +1,31 @@
-.PHONY: help setup install up down logs status urls download transcribe ask pipeline plausible fooocus dmg
-
+.PHONY: help setup install dmg test test-dashboard check up down logs status urls plausible fooocus dashboard
+MODULE ?= dashboard
 help:
-	@echo "Personal Open-Source Toolkit"
-	@echo ""
-	@echo "  make setup      Full first-time setup"
-	@echo "  make install    Install CLI tools only (yt-dlp, Ollama, Whisper)"
-	@echo "  make dmg        Build macOS installer DMG"
-	@echo "  make up         Start Docker services + open dashboard"
-	@echo "  make down       Stop Docker services"
-	@echo "  make logs       Follow service logs"
-	@echo "  make status     Show service status"
-	@echo "  make urls       Show service URLs"
-	@echo "  make plausible  Set up Plausible analytics"
-	@echo "  make fooocus    Set up Fooocus (GPU required)"
-
-setup:
-	bash scripts/setup-all.sh
-
-install:
+	@echo "make setup | test | test-dashboard | check | dmg | dashboard | plausible | fooocus"
+	@echo "pt pipeline <URL-or-file> | pt services up automation | pt services up design"
+setup install:
 	bash scripts/install-cli.sh
-
-up:
-	bash scripts/render-dashboard-config.sh
-	docker compose up -d
-	@echo ""
-	@echo "Startdashboard: http://localhost:$${DASHBOARD_PORT:-8080}"
-
-down:
-	docker compose down
-
-logs:
-	docker compose logs -f
-
-status:
-	docker compose ps
-
-urls:
-	./bin/pt urls
-
-download:
-	./bin/pt download $(URL)
-
-transcribe:
-	./bin/pt transcribe $(FILE)
-
-ask:
-	./bin/pt ask "$(PROMPT)"
-
-pipeline:
-	./bin/pt pipeline $(URL)
-
-plausible:
-	bash scripts/setup-plausible.sh
-
-fooocus:
-	bash scripts/setup-fooocus.sh
-
 dmg:
 	bash macos/build-dmg.sh
+test:
+	PYTHONPATH=src python3 -m unittest discover -s tests -v
+test-dashboard:
+	node --test tests/dashboard.test.cjs
+check:
+	python3 scripts/check.py
+up:
+	./bin/pt services up $(MODULE)
+dashboard:
+	./bin/pt dashboard
+down:
+	./bin/pt services down $(MODULE)
+logs:
+	./bin/pt services logs $(MODULE)
+status:
+	./bin/pt services status
+urls:
+	./bin/pt urls
+plausible:
+	bash scripts/setup-plausible.sh
+fooocus:
+	bash scripts/setup-fooocus.sh

@@ -1,54 +1,20 @@
 #!/usr/bin/env bash
-# Install CLI tools: yt-dlp, Ollama, faster-whisper (Whisper)
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV="${ROOT}/.venv"
-
-echo "==> Installing CLI tools for Personal Toolkit"
-echo "    Root: ${ROOT}"
-
-# ── System deps ──────────────────────────────────────────────────────────────
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  exec bash "$(dirname "${BASH_SOURCE[0]}")/install-macos.sh"
+  exec bash "${ROOT}/scripts/install-macos.sh"
 fi
-
-if command -v apt-get &>/dev/null; then
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq ffmpeg curl ca-certificates python3-venv python3-pip zstd >/dev/null
+if ! command -v python3 >/dev/null || ! command -v ffmpeg >/dev/null; then
+  echo "Install Python 3.10+, python3-venv and ffmpeg, then rerun make setup." >&2
+  exit 1
 fi
-
-# ── Python venv (Whisper + yt-dlp) ────────────────────────────────────────────
-if [[ ! -d "${VENV}" ]]; then
-  python3 -m venv "${VENV}"
-fi
-# shellcheck disable=SC1091
-source "${VENV}/bin/activate"
-pip install -q --upgrade pip
-pip install -q yt-dlp faster-whisper
-
-echo "    ✓ yt-dlp $(yt-dlp --version)"
-echo "    ✓ faster-whisper installed"
-
-# ── Ollama ───────────────────────────────────────────────────────────────────
-if ! command -v ollama &>/dev/null; then
-  echo "==> Installing Ollama..."
-  curl -fsSL https://ollama.com/install.sh | sh
+if [[ ! -d "${ROOT}/.venv" ]]; then python3 -m venv "${ROOT}/.venv"; fi
+"${ROOT}/.venv/bin/python" -m pip install -r "${ROOT}/requirements.txt"
+bash "${ROOT}/bin/pt" init
+if command -v ollama >/dev/null; then
+  OLLAMA_HOST=127.0.0.1:11434 ollama pull "$(bash "${ROOT}/bin/pt" model)"
 else
-  echo "    ✓ Ollama already installed"
+  echo "Install/start Ollama from https://ollama.com, then rerun make setup." >&2
+  exit 1
 fi
-
-# ── Pull a default model (small, fast) ───────────────────────────────────────
-if command -v ollama &>/dev/null; then
-  if ! ollama list 2>/dev/null | grep -q "llama3.2"; then
-    echo "==> Pulling default Ollama model (llama3.2:3b)..."
-    ollama pull llama3.2:3b || echo "    (skipped — start Ollama service first: ollama serve)"
-  fi
-fi
-
-# ── Directories ──────────────────────────────────────────────────────────────
-mkdir -p "${ROOT}/downloads" "${ROOT}/transcripts" "${ROOT}/generated"
-
-echo ""
-echo "Done! Activate the venv with:  source ${VENV}/bin/activate"
-echo "Or use the unified CLI:         ./bin/pt --help"
+bash "${ROOT}/bin/pt" doctor
