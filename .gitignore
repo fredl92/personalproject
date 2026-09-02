@@ -18,3 +18,9 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Optional upstream checkouts and model caches
+services/
+.cache/
+.env.*
+!.env.example

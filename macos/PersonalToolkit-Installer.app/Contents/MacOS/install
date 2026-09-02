@@ -1,61 +1,17 @@
 #!/bin/bash
-# Double-click installer — copies toolkit to ~/PersonalToolkit and runs setup
 set -euo pipefail
-
 APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-RESOURCES="${APP_DIR}/Contents/Resources"
-TOOLKIT_SRC="${RESOURCES}/toolkit"
+TOOLKIT_SRC="${APP_DIR}/Contents/Resources/toolkit"
 INSTALL_DIR="${HOME}/PersonalToolkit"
-LOG="/tmp/personal-toolkit-install.log"
-
-exec > >(tee -a "${LOG}") 2>&1
-
-notify() {
-  osascript -e "display notification \"$1\" with title \"Personal Toolkit\"" 2>/dev/null || true
-}
-
-confirm=$(osascript <<'APPLESCRIPT'
-display dialog "Install Personal Toolkit to ~/PersonalToolkit?
-
-This will install:
-• yt-dlp, Ollama, Whisper (CLI tools)
-• n8n + Penpot (via Docker Desktop)
-
-Homebrew and Docker Desktop may be installed if missing." buttons {"Cancel", "Install"} default button "Install" with icon note
-if button returned of result is "Install" then
-  return "yes"
-else
-  return "no"
-end if
+# Paths are passed as argv, never interpolated into AppleScript source.
+osascript -e 'display dialog "Install/update Personal Toolkit in ~/PersonalToolkit? Existing data and configuration are preserved. Homebrew is required. Docker modules remain optional." buttons {"Cancel", "Install"} default button "Install"' >/dev/null
+bash "${TOOLKIT_SRC}/scripts/copy-toolkit.sh" "$TOOLKIT_SRC" "$INSTALL_DIR"
+osascript - "$INSTALL_DIR" <<'APPLESCRIPT'
+on run argv
+  set target to item 1 of argv
+  tell application "Terminal"
+    activate
+    do script "cd " & quoted form of target & " && bash scripts/install-macos.sh && echo 'Core setup completed.'"
+  end tell
+end run
 APPLESCRIPT
-)
-
-if [[ "${confirm}" != "yes" ]]; then
-  exit 0
-fi
-
-notify "Installing to ${INSTALL_DIR}..."
-
-mkdir -p "${INSTALL_DIR}"
-if command -v rsync &>/dev/null; then
-  rsync -a --delete \
-    --exclude '.venv' --exclude '.git' --exclude 'dist' --exclude 'downloads' \
-    --exclude 'transcripts' --exclude 'generated' --exclude '.env' \
-    "${TOOLKIT_SRC}/" "${INSTALL_DIR}/"
-else
-  rm -rf "${INSTALL_DIR}"
-  cp -R "${TOOLKIT_SRC}" "${INSTALL_DIR}"
-fi
-
-chmod +x "${INSTALL_DIR}/bin/pt" "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
-
-notify "Running setup (may take several minutes)..."
-
-osascript <<APPLESCRIPT
-tell application "Terminal"
-  activate
-  do script "cd '${INSTALL_DIR}' && bash scripts/install-macos.sh; echo ''; echo 'Done! Try: pt ask Hello'; echo 'Log: ${LOG}'"
-end tell
-APPLESCRIPT
-
-notify "Setup started in Terminal"

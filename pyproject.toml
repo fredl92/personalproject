@@ -1,19 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "personal-toolkit"
-version = "1.0.0"
-description = "Self-hosted open-source toolkit: yt-dlp, Ollama, Whisper, n8n, Penpot, Plausible, Fooocus"
+version = "1.0.1"
+description = "Local transcription, Dutch summaries and optional self-hosted modules"
 readme = "README.md"
-license = { text = "MIT" }
 requires-python = ">=3.10"
-dependencies = [
-  "yt-dlp",
-  "faster-whisper",
-]
+license = {text = "MIT"}
+dependencies = ["yt-dlp==2026.08.19", "faster-whisper==1.2.1"]
 
-[project.urls]
-Homepage = "https://github.com/fredl92/personalproject"
-Repository = "https://github.com/fredl92/personalproject"
+[project.scripts]
+pt = "personal_toolkit.__main__:main"
 
-[tool.personal-toolkit]
-services = ["n8n", "penpot", "plausible", "ollama", "fooocus"]
-cli_tools = ["yt-dlp", "whisper", "ollama"]
+[tool.setuptools.packages.find]
+where = ["src"]

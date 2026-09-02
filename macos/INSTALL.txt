@@ -1,20 +1,11 @@
-Personal Toolkit — macOS Install
-================================
+Personal Toolkit 1.0.1 — macOS
 
-1. Double-click "PersonalToolkit-Installer"
-2. Click Install in the dialog
-3. Wait for Terminal to finish setup
+1. Homebrew moet aanwezig zijn (https://brew.sh).
+2. Open PersonalToolkit-Installer en bevestig de installatie.
+3. Terminal voert de kerninstallatie uit. Alleen bij succes verschijnt de voltooiingsmelding.
+4. Open een nieuw Terminal-venster: pt doctor
+5. Test: pt pipeline "/pad/naar/korte-opname.wav"
 
-After install:
-  pt ask "Hello!"
-  pt download "https://youtube.com/watch?v=..."
-  pt urls
-
-Services (after Docker Desktop is running):
-  n8n     → http://localhost:5678
-  Penpot  → http://localhost:9001
-  Ollama  → http://localhost:11434
-
-Installed to: ~/PersonalToolkit
-
-Need help? Open README.txt or visit the project docs.
+Bestaande instellingen, modellen en gebruikersbestanden blijven behouden.
+Docker, Penpot, n8n, Plausible en Fooocus zijn optioneel.
+Zie README.md en docs/ voor installatie en bekende beperkingen.

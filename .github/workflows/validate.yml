@@ -1,0 +1,88 @@
+name: Toolkit validation
+on:
+  pull_request:
+  push:
+    branches: [main, 'fix/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: toolkit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  regression:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: make check && make test
+      - name: Build and inspect native macOS DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          ./bin/pt init
+          mkdir -p services/canary data/canary
+          touch services/canary/DO_NOT_SHIP data/canary/DO_NOT_SHIP
+          make dmg
+          toolkit_mount_dir="$(mktemp -d)/Toolkit Mount"
+          mkdir -p "$toolkit_mount_dir"
+          hdiutil attach -readonly -nobrowse -mountpoint "$toolkit_mount_dir" "dist/Personal-Toolkit-$(cat VERSION).dmg"
+          trap 'hdiutil detach "$toolkit_mount_dir"' EXIT
+          toolkit_payload="$toolkit_mount_dir/PersonalToolkit-Installer.app/Contents/Resources/toolkit"
+          test -f "$toolkit_payload/src/personal_toolkit/pipeline.py"
+          test ! -e "$toolkit_payload/.env"
+          test ! -e "$toolkit_payload/services"
+          test ! -e "$toolkit_payload/data"
+          "$toolkit_payload/bin/pt" --help
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: macOS-installer
+          path: |
+            dist/*.dmg
+            dist/*.sha256
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OLLAMA_MODEL: qwen2.5:0.5b
+      WHISPER_MODEL: tiny
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure optional automation
+        run: |
+          ./bin/pt init
+          mkdir -p data/jobs data/whisper-cache
+          echo "TOOLKIT_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "TOOLKIT_GID=$(id -g)" >> "$GITHUB_ENV"
+          docker compose --profile automation config --quiet
+      - name: Build and start real services
+        run: |
+          docker compose --profile automation up -d --build --wait --wait-timeout 180
+          docker compose exec -T ollama ollama pull "$OLLAMA_MODEL"
+      - name: Import workflow into pinned n8n
+        run: |
+          docker compose cp workflows/n8n/download-transcribe-summarize.json n8n:/tmp/toolkit-workflow.json
+          docker compose exec -T n8n n8n import:workflow --input=/tmp/toolkit-workflow.json
+      - name: Real audio transcription and Dutch summary
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng
+          espeak-ng -v nl -s 140 -w data/jobs/smoke.wav "Dit is een test van de persoonlijke toolkit. We bespreken vandaag het gezinsbudget. Volgende week vergelijken we de energiekosten. De afspraak is om eerst de facturen te verzamelen en daarna een beslissing te nemen."
+          docker compose exec -T pipeline-worker python -m personal_toolkit pipeline /data/jobs/smoke.wav
+          python3 scripts/verify-smoke.py
+      - name: Failure diagnostics
+        if: failure()
+        run: docker compose --profile automation logs --tail 100
+      - name: Stop test services
+        if: always()
+        run: docker compose --profile automation down
