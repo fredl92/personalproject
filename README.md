@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # personalproject
 
 **Self-hosted open-source stack — no subscriptions, full privacy.**
@@ -69,3 +70,6 @@ personal-toolkit/
 ## License
 
 MIT — see [LICENSE](LICENSE). Upstream tools retain their own licenses.
+=======
+# personalproject
+>>>>>>> origin/main
