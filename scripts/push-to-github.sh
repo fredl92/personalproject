@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Create GitHub repo and push all branches
+# Push to https://github.com/fredl92/personalproject
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
-REPO_NAME="${1:-personalproject}"
-VISIBILITY="${2:-private}"
+REMOTE="${GITHUB_REMOTE:-https://github.com/fredl92/personalproject.git}"
 
 if ! gh auth status &>/dev/null; then
   echo "Not logged into GitHub. Run:" >&2
@@ -14,30 +13,12 @@ if ! gh auth status &>/dev/null; then
   exit 1
 fi
 
-USER="$(gh api user -q .login)"
-REMOTE="https://github.com/${USER}/${REPO_NAME}.git"
-
-# Ensure main branch
+git remote remove origin 2>/dev/null || true
+git remote add origin "${REMOTE}"
 git branch -M main
 
-if gh repo view "${USER}/${REPO_NAME}" &>/dev/null; then
-  echo "Repo already exists: https://github.com/${USER}/${REPO_NAME}"
-  git remote remove origin 2>/dev/null || true
-  git remote add origin "${REMOTE}"
-else
-  echo "Creating ${VISIBILITY} repo: ${USER}/${REPO_NAME}"
-  gh repo create "${REPO_NAME}" \
-    --"${VISIBILITY}" \
-    --description "Personal open-source toolkit: yt-dlp, Ollama, Whisper, n8n, Penpot, Plausible, Fooocus" \
-    --source=. \
-    --remote=origin \
-    --push
-  echo ""
-  echo "Pushed to: https://github.com/${USER}/${REPO_NAME}"
-  exit 0
-fi
-
-git push -u origin main
+echo "Pushing to ${REMOTE} ..."
+git push -u origin main --force-with-lease
 
 echo ""
-echo "Pushed to: https://github.com/${USER}/${REPO_NAME}"
+echo "Done: https://github.com/fredl92/personalproject"

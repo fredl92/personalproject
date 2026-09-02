@@ -1,4 +1,4 @@
-# Personal Toolkit
+# personalproject
 
 **Self-hosted open-source stack — no subscriptions, full privacy.**
 
