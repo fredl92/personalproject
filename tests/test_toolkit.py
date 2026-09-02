@@ -180,7 +180,8 @@ class PipelineTests(Workspace):
 
     def test_empty_incomplete_ollama_responses_fail(self):
         import io
-        for data in [{'response':'','done':True},{'response':'partial','done':False},{'error':'missing model'}]:
+        for data in [{'response':'','done':True},{'response':'partial','done':False},{'error':'missing model'},
+                     {'response':None,'done':True}, []]:
             with patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(data).encode())), self.assertRaises(RuntimeError):
                 pipeline.generate('text',self.settings,'summarize')
 

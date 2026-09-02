@@ -85,9 +85,20 @@ def generate(text, settings, instruction, system=None):
             result = json.load(response)
     except (urllib.error.URLError, TimeoutError) as error:
         raise RuntimeError("Ollama request failed. Check the service and installed model with pt doctor.") from error
-    answer = result.get("response", "").strip()
+    if not isinstance(result, dict):
+        raise RuntimeError("Ollama returned an invalid response object.")
+    answer = result.get("response", "")
+    if not isinstance(answer, str):
+        raise RuntimeError("Ollama returned a non-text response.")
+    answer = answer.strip()
     if result.get("error") or not answer or result.get("done") is not True:
-        raise RuntimeError("Ollama returned an empty, incomplete or failed response.")
+        # Diagnostic metadata only: never include source text or generated content in errors.
+        reason = result.get("done_reason")
+        if reason not in ("stop", "length", "load", "unload"):
+            reason = "unknown"
+        raise RuntimeError("Ollama returned an empty, incomplete or failed response "
+                           f"(completed={result.get('done') is True}, reason={reason}, "
+                           f"characters={len(answer)}, server_error={bool(result.get('error'))}).")
     return answer
 
 

@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      OLLAMA_MODEL: qwen2.5:0.5b
+      OLLAMA_MODEL: llama3.2:3b
       WHISPER_MODEL: tiny
       DASHBOARD_PORT: '18080'
     steps:

@@ -18,7 +18,7 @@ Deze regressietests gebruiken modeldoubles; ze meten geen herkenningskwaliteit o
 
 ## GitHub Actions
 
-De workflow bevat tests op Linux en macOS, een native DMG-build met een pad met spaties, inhoudscontrole, Compose-validatie, een worker-imagebuild en een echte transcriptie/samenvattingssmoketest. Voor die smoketest wordt een klein testmodel gebruikt; dit is geen kwaliteitsbenchmark voor het standaardmodel. CI mag alleen als geslaagd worden gerapporteerd als de run van de betreffende commit daadwerkelijk groen is.
+De workflow bevat tests op Linux en macOS, een native DMG-build met een pad met spaties, inhoudscontrole, Compose-validatie, een worker-imagebuild en een echte transcriptie/samenvattingssmoketest. De smoketest gebruikt Whisper tiny en het standaardtaalmodel llama3.2:3b; dit is geen kwaliteitsbenchmark. CI mag alleen als geslaagd worden gerapporteerd als de run van de betreffende commit daadwerkelijk groen is.
 
 ## Nog op een gebruikersmachine te controleren
 
