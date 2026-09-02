@@ -9,6 +9,10 @@ echo "==> Installing CLI tools for Personal Toolkit"
 echo "    Root: ${ROOT}"
 
 # ── System deps ──────────────────────────────────────────────────────────────
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  exec bash "$(dirname "${BASH_SOURCE[0]}")/install-macos.sh"
+fi
+
 if command -v apt-get &>/dev/null; then
   sudo apt-get update -qq
   sudo apt-get install -y -qq ffmpeg curl ca-certificates python3-venv python3-pip zstd >/dev/null

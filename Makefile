@@ -1,10 +1,11 @@
-.PHONY: help setup install up down logs status urls download transcribe ask pipeline plausible fooocus
+.PHONY: help setup install up down logs status urls download transcribe ask pipeline plausible fooocus dmg
 
 help:
 	@echo "Personal Open-Source Toolkit"
 	@echo ""
 	@echo "  make setup      Full first-time setup"
 	@echo "  make install    Install CLI tools only (yt-dlp, Ollama, Whisper)"
+	@echo "  make dmg        Build macOS installer DMG"
 	@echo "  make up         Start Docker services (n8n, Penpot)"
 	@echo "  make down       Stop Docker services"
 	@echo "  make logs       Follow service logs"
@@ -51,3 +52,6 @@ plausible:
 
 fooocus:
 	bash scripts/setup-fooocus.sh
+
+dmg:
+	bash macos/build-dmg.sh

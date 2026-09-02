@@ -14,6 +14,18 @@ A unified setup for the open-source tools from your stack — all self-hosted, n
 
 ## Quick start
 
+### macOS — easiest (DMG installer)
+
+```bash
+make dmg                        # build Personal-Toolkit-1.0.0.dmg
+open dist/Personal-Toolkit-1.0.0.dmg
+```
+
+Double-click **Install Personal Toolkit**, confirm, and wait for Terminal to finish.
+Everything lands in `~/PersonalToolkit` with `pt` added to your shell.
+
+### Linux / manual
+
 ```bash
 git clone <this-repo> personal-toolkit && cd personal-toolkit
 cp .env.example .env          # edit passwords before exposing to network

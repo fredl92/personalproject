@@ -14,4 +14,6 @@ __pycache__/
 
 # OS
 .DS_Store
-agent-tools/
+dist/
+*.dmg
+*.dmg.sha256
