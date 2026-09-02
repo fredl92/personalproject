@@ -1,0 +1,132 @@
+# Personal Open-Source Toolkit — self-hosted services
+# Start:  make up          or   docker compose up -d
+# Stop:   make down         or   docker compose down
+
+name: personal-toolkit
+
+networks:
+  toolkit:
+    driver: bridge
+
+volumes:
+  n8n_data:
+  penpot_postgres:
+  penpot_assets:
+
+services:
+  # ── n8n — workflow automation (connects to Ollama, Whisper, yt-dlp via host) ─
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${N8N_PROTOCOL:-http}://${N8N_HOST:-localhost}:${N8N_PORT:-5678}/
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-true}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - GENERIC_TIMEZONE=UTC
+      - TZ=UTC
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ${DOWNLOAD_DIR:-./downloads}:/data/downloads:ro
+      - ${TRANSCRIPTS_DIR:-./transcripts}:/data/transcripts:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - toolkit
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Penpot — open-source design tool (Figma alternative) ─────────────────────
+  penpot-postgres:
+    image: postgres:15
+    restart: unless-stopped
+    stop_signal: SIGINT
+    volumes:
+      - penpot_postgres:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_INITDB_ARGS=--data-checksums
+      - POSTGRES_DB=penpot
+      - POSTGRES_USER=penpot
+      - POSTGRES_PASSWORD=penpot
+    networks:
+      - toolkit
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U penpot -d penpot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  penpot-valkey:
+    image: valkey/valkey:8.1
+    restart: unless-stopped
+    networks:
+      - toolkit
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  penpot-backend:
+    image: penpotapp/backend:${PENPOT_VERSION:-2.16}
+    restart: unless-stopped
+    volumes:
+      - penpot_assets:/opt/data/assets
+    depends_on:
+      penpot-postgres:
+        condition: service_healthy
+      penpot-valkey:
+        condition: service_healthy
+    environment:
+      - PENPOT_FLAGS=disable-email-verification enable-smtp enable-prepl-server disable-secure-session-cookies
+      - PENPOT_SECRET_KEY=${PENPOT_SECRET_KEY}
+      - PENPOT_PUBLIC_URI=${PENPOT_PUBLIC_URI:-http://localhost:9001}
+      - PENPOT_DATABASE_URI=postgresql://penpot-postgres/penpot
+      - PENPOT_DATABASE_USERNAME=penpot
+      - PENPOT_DATABASE_PASSWORD=penpot
+      - PENPOT_REDIS_URI=redis://penpot-valkey/0
+      - PENPOT_OBJECTS_STORAGE_BACKEND=fs
+      - PENPOT_OBJECTS_STORAGE_FS_DIRECTORY=/opt/data/assets
+      - PENPOT_TELEMETRY_ENABLED=false
+    networks:
+      - toolkit
+
+  penpot-exporter:
+    image: penpotapp/exporter:${PENPOT_VERSION:-2.16}
+    restart: unless-stopped
+    depends_on:
+      penpot-valkey:
+        condition: service_healthy
+    environment:
+      - PENPOT_SECRET_KEY=${PENPOT_SECRET_KEY}
+      - PENPOT_PUBLIC_URI=${PENPOT_PUBLIC_URI:-http://localhost:9001}
+      - PENPOT_REDIS_URI=redis://penpot-valkey/0
+    networks:
+      - toolkit
+
+  penpot-frontend:
+    image: penpotapp/frontend:${PENPOT_VERSION:-2.16}
+    restart: unless-stopped
+    ports:
+      - "${PENPOT_PORT:-9001}:8080"
+    volumes:
+      - penpot_assets:/opt/data/assets
+    depends_on:
+      - penpot-backend
+      - penpot-exporter
+    environment:
+      - PENPOT_FLAGS=disable-email-verification enable-smtp enable-prepl-server disable-secure-session-cookies
+      - PENPOT_PUBLIC_URI=${PENPOT_PUBLIC_URI:-http://localhost:9001}
+      - PENPOT_BACKEND_URI=http://penpot-backend:6060
+      - PENPOT_EXPORTER_URI=http://penpot-exporter:6061
+    networks:
+      - toolkit

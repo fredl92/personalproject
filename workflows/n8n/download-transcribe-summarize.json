@@ -1,0 +1,46 @@
+{
+  "name": "Download → Transcribe → Summarize",
+  "nodes": [
+    {
+      "parameters": {
+        "command": "yt-dlp -f ba -o /data/downloads/%(id)s.%(ext)s --print after_move:filepath \"={{ $json.url }}\""
+      },
+      "name": "Download (yt-dlp)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [260, 300],
+      "notes": "Requires host yt-dlp or mount downloads volume"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3.2:3b\",\n  \"prompt\": \"Summarize this transcript in 5 bullet points:\\n\\n{{ $json.transcript }}\",\n  \"stream\": false\n}"
+      },
+      "name": "Summarize (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [40, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Download (yt-dlp)", "type": "main", "index": 0 }]]
+    },
+    "Download (yt-dlp)": {
+      "main": [[{ "node": "Summarize (Ollama)", "type": "main", "index": 0 }]]
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

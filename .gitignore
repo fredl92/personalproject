@@ -1,0 +1,17 @@
+# Downloads, transcripts, generated files, secrets
+.env
+data/
+downloads/
+transcripts/
+generated/
+.venv/
+services/plausible/
+services/fooocus/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+agent-tools/

@@ -1,0 +1,666 @@
+Self-Host Plausible Analytics on a VPS with Docker
+
+On this page
+
+Plausible Analytics gives you web analytics without cookies, personal data collection, or consent banners. Self-hosting the Community Edition means your visitor data never leaves your server. This guide walks through the full lifecycle: deploying Plausible CE v3.2.0 with Docker Compose, integrating the tracking script, setting up custom events, and keeping the whole thing backed up and updated.
+
+Prerequisites: A VPS with at least 4 GB RAM running Docker and Docker Compose Docker in Production on a VPS: What Breaks and How to Fix It, a domain name pointed at your server, and a reverse proxy handling TLS Traefik vs Caddy vs Nginx: Docker Reverse Proxy Compared.
+
+## What is Plausible Community Edition and how does it differ from Cloud?
+
+Plausible CE is the free, AGPL-licensed, self-hosted version of Plausible Analytics. It runs as three Docker containers: the Plausible web app (Elixir), PostgreSQL for user accounts, and ClickHouse for analytics event storage. You get the same privacy-first dashboard as the paid cloud version. Your data stays on your server. The CE is released twice per year as a long-term release.
+
+The differences:
+
+| Feature | Cloud | Community Edition |
+| --- | --- | --- |
+| Core analytics dashboard | Yes | Yes |
+| Privacy-first (no cookies) | Yes | Yes |
+| Custom events and goals | Yes | Yes |
+| Stats API (v2) | Yes | Yes |
+| Email reports | Yes | Yes (requires SMTP) |
+| Funnels and revenue goals | Yes | No |
+| Sites API | Yes | No |
+| Looker Studio connector | Yes | No |
+| Google Search Console integration | Yes | Yes (requires config) |
+| SSO / team management | Yes | No |
+| Premium support | Yes | Community only |
+| Update frequency | Weekly | Twice per year |
+| Infrastructure management | Managed | You handle it |
+
+The cloud version uses a subscription model. Check Plausible's pricing page for current rates. Self-hosting costs you only your VPS resources.
+
+## What are the system requirements for self-hosting Plausible?
+
+ClickHouse is the heaviest component. It needs at least 2 GB of RAM at idle and spikes higher during complex queries over large datasets. The CPU must support SSE 4.2 instructions (all modern x86_64 processors do; ARM64 with NEON works too). Plan your VPS accordingly.
+
+| Resource | Minimum | Recommended |
+| --- | --- | --- |
+| RAM | 2 GB | 4 GB |
+| CPU | 1 vCPU (SSE 4.2) | 2 vCPU |
+| Disk | 10 GB | 20 GB+ |
+| Docker | 20.10+ | Latest stable |
+| Docker Compose | v2.x | Latest stable |
+
+Disk growth depends on traffic. Expect roughly 1 GB per 1-2 million pageviews stored in ClickHouse. At low traffic volumes (under 100k pageviews/month), disk usage is negligible.
+
+## How do you install Plausible Analytics with Docker Compose?
+
+Clone the official community-edition repository at the v3.2.0 tag, configure your environment variables, and start the containers. The whole process takes about five minutes.
+
+Clone the repository:
+
+```
+git clone -b v3.2.0 --single-branch https://github.com/plausible/community-edition plausible-ce
+cd plausible-ce
+
+```
+
+This gives you the`compose.yml`, ClickHouse configuration files, and a README.
+
+### How do you configure the environment variables?
+
+Create a`.env` file in the`plausible-ce` directory. Two variables are required. The rest are optional but some are strongly recommended.
+
+Generate the secrets first:
+
+```
+openssl rand -base64 48
+
+```
+
+This outputs a 64-character string. Copy it for`SECRET_KEY_BASE`.
+
+Generate a separate key for TOTP encryption:
+
+```
+openssl rand -base64 32
+
+```
+
+Now create the`.env` file:
+
+```
+cat > .env << 'EOF'
+BASE_URL=https://plausible.example.com
+SECRET_KEY_BASE=<your-64-char-secret>
+TOTP_VAULT_KEY=<your-32-char-key>
+DISABLE_REGISTRATION=invite_only
+
+# SMTP for email reports and password resets
+MAILER_EMAIL=plausible@example.com
+SMTP_HOST_ADDR=mail.example.com
+SMTP_HOST_PORT=587
+SMTP_USER_NAME=plausible@example.com
+SMTP_USER_PWD=<your-smtp-password>
+SMTP_HOST_SSL_ENABLED=false
+EOF
+
+```
+
+Lock down the file permissions since it contains secrets:
+
+```
+chmod 600 .env
+ls -la .env
+
+```
+
+```
+-rw------- 1 root root 412 Mar 20 10:00 .env
+
+```
+
+What each variable does:
+
+- BASE_URL: The public URL where Plausible is reachable. Must match your reverse proxy config.
+- SECRET_KEY_BASE: Encrypts sessions and generates derived keys. Minimum 64 bytes. Never share it.
+- TOTP_VAULT_KEY: Encrypts two-factor authentication secrets with AES256-GCM. If omitted, it is derived from`SECRET_KEY_BASE` via PBKDF2, but setting it explicitly is safer for key rotation.
+- DISABLE_REGISTRATION: Set to`invite_only`(default) or`true` after creating your account. Prevents strangers from registering on your instance.
+- SMTP variables: Required for email reports, password resets, and invitation emails. Without SMTP, Plausible still works but email features are disabled.
+
+### How do you set up a reverse proxy with TLS for Plausible?
+
+Plausible listens on port 8000 by default. Your reverse proxy forwards HTTPS traffic to it. If you already have Caddy or Traefik running from Traefik vs Caddy vs Nginx: Docker Reverse Proxy Compared, add Plausible as a new upstream.
+
+Create a`compose.override.yml` to connect Plausible to your reverse proxy network:
+
+```
+services:
+  plausible:
+    networks:
+      - proxy
+      - default
+
+networks:
+  proxy:
+    external: true
+
+```
+
+If you use Caddy, add this to your Caddyfile:
+
+```
+plausible.example.com {
+    reverse_proxy plausible:8000
+}
+
+```
+
+If you use Traefik, add labels to the override:
+
+```
+services:
+  plausible:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plausible.rule=Host(`plausible.example.com`)"
+      - "traefik.http.routers.plausible.tls.certresolver=letsencrypt"
+      - "traefik.http.services.plausible.loadbalancer.server.port=8000"
+    networks:
+      - proxy
+      - default
+
+networks:
+  proxy:
+    external: true
+
+```
+
+Alternatively, Plausible has built-in Let's Encrypt support. Set`HTTP_PORT=80` and`HTTPS_PORT=443` in your`.env` file, then expose those ports in the override:
+
+```
+services:
+  plausible:
+    ports:
+      - 80:80
+      - 443:443
+
+```
+
+This approach is simpler but means Plausible handles TLS itself, which may conflict if other services share the same server.
+
+### Start the containers
+
+```
+docker compose up -d
+
+```
+
+Three containers start:`plausible_db`(PostgreSQL 16),`plausible_events_db`(ClickHouse 24.12), and`plausible`(the web app). The Plausible container runs database migrations automatically on startup.
+
+Check that all three are healthy:
+
+```
+docker compose ps
+
+```
+
+```
+NAME                  IMAGE                                          STATUS
+plausible             ghcr.io/plausible/community-edition:v3.2.0     Up 30s (healthy)
+plausible_db          postgres:16-alpine                             Up 35s (healthy)
+plausible_events_db   clickhouse/clickhouse-server:24.12-alpine      Up 35s (healthy)
+
+```
+
+All three should show`(healthy)`. If ClickHouse shows`(health: starting)`, give it another minute. It runs a healthcheck via`wget` against its HTTP interface.
+
+### Create your admin account
+
+Open`https://plausible.example.com` in your browser. You will see the registration form. Create your account. With`DISABLE_REGISTRATION=invite_only`, new users can only register if you explicitly invite them from the dashboard.
+
+After registration, lock registration completely if you are the only user:
+
+Edit`.env` and change:
+
+```
+DISABLE_REGISTRATION=true
+
+```
+
+Then restart:
+
+```
+docker compose up -d
+
+```
+
+## How do you add the Plausible tracking script to your site?
+
+After logging in, click "Add a website" and enter your domain. Plausible generates a tracking snippet. The default script tag looks like this:
+
+```
+<script defer data-domain="yoursite.com" src="https://plausible.example.com/js/script.js"></script>
+
+```
+
+Replace`plausible.example.com` with your actual Plausible instance URL. Add this tag to the` ` of every page you want to track.
+
+### How do you add Plausible to a static HTML site?
+
+Paste the script tag directly into your HTML` `:
+
+```
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>My Site</title>
+    <script defer data-domain="yoursite.com" src="https://plausible.example.com/js/script.js"></script>
+</head>
+<body>
+    <!-- content -->
+</body>
+</html>
+
+```
+
+For static site generators (Hugo, Jekyll, 11ty), add the script tag to your base template or head partial.
+
+### How do you add Plausible to a WordPress site?
+
+The official Plausible Analytics WordPress plugin (v2.5.4, 10K+ active installs) handles everything through the WordPress dashboard.
+
+1. Install the plugin: Plugins > Add New > Search "Plausible Analytics"
+2. Go to Settings > Plausible Analytics
+3. Enter your self-hosted domain URL (e.g.`https://plausible.example.com`)
+4. Enter the domain name to track
+5. Save
+
+The plugin injects the tracking script automatically. It also supports WooCommerce conversion tracking and automatic form submission tracking for Contact Form 7, WPForms, and Ninja Forms.
+
+### How do you add Plausible to a Next.js app?
+
+Use the next-plausible package (v3.12.5, 36K weekly downloads).
+
+```
+npm i next-plausible
+
+```
+
+For the App Router (Next.js 13+), add the provider in your root layout:
+
+```
+import PlausibleProvider from "next-plausible";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html>
+      <head>
+        <PlausibleProvider
+          domain="yoursite.com"
+          customDomain="https://plausible.example.com"
+          selfHosted
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+
+```
+
+For tracking custom events in components, use the`usePlausible` hook:
+
+```
+"use client";
+import { usePlausible } from "next-plausible";
+
+export default function SignupButton() {
+  const plausible = usePlausible();
+  return (
+    <button onClick={() => plausible("Signup")}>
+      Sign up
+    </button>
+  );
+}
+
+```
+
+### How do you add Plausible to a single-page application?
+
+For React, Vue, Svelte, or any SPA, add the script tag to your`index.html`. Plausible automatically tracks route changes via the History API. No extra configuration needed.
+
+If your SPA uses hash-based routing (`/#/path`), use the hash extension:
+
+```
+<script defer data-domain="yoursite.com" src="https://plausible.example.com/js/script.hash.js"></script>
+
+```
+
+## How do you track custom events and goals in Plausible?
+
+Custom events let you track actions beyond pageviews: button clicks, form submissions, file downloads, signups. Plausible offers two methods: a no-code CSS class approach and a JavaScript API for dynamic tracking.
+
+First, enable the enhanced script that supports custom events. Replace the default script source:
+
+```
+<script defer data-domain="yoursite.com" src="https://plausible.example.com/js/script.tagged-events.js"></script>
+
+```
+
+### CSS class method (no JavaScript required)
+
+Add a CSS class in the format`plausible-event-name=EventName` to any HTML element:
+
+```
+<a href="/signup" class="plausible-event-name=Signup">Create Account</a>
+
+<button class="plausible-event-name=Download+PDF">Download Report</button>
+
+<form class="plausible-event-name=Contact+Form+Submit">
+  <!-- form fields -->
+</form>
+
+```
+
+Use`+` for spaces in event names. Some CMSs (Webflow) replace`=` with`-`. In that case, use a double dash`--` instead:`plausible-event-name--Signup`.
+
+### JavaScript API for dynamic events
+
+Call the`plausible()` function directly for events that need conditional logic or dynamic properties:
+
+```
+// Simple event
+plausible("Signup");
+
+// Event with custom properties
+plausible("Download", {
+  props: { format: "PDF", document: "annual-report" }
+});
+
+// Event with a callback (useful for redirects)
+plausible("Outbound Link", {
+  props: { url: "https://example.com" },
+  callback: () => { window.location = "https://example.com"; }
+});
+
+```
+
+### Create the goal in your dashboard
+
+Events do not appear in your dashboard until you create a matching goal. Go to Site Settings > Goals > Add Goal. Select "Custom event" and enter the exact event name (e.g.`Signup`). The name is case-sensitive and must match your code.
+
+## How do you use the Plausible Stats API?
+
+Plausible includes a Stats API (v2) for programmatic access to your analytics data. On your self-hosted instance, the API base URL is`https://plausible.example.com/api/v2/query`.
+
+Create an API key: go to Account Settings > API Keys > New API Key > Stats API.
+
+Query your visitor count for the last 7 days:
+
+```
+curl --request POST \
+  --header 'Authorization: Bearer YOUR-API-KEY' \
+  --header 'Content-Type: application/json' \
+  --url 'https://plausible.example.com/api/v2/query' \
+  --data '{
+    "site_id": "yoursite.com",
+    "metrics": ["visitors", "pageviews", "bounce_rate"],
+    "date_range": "7d"
+  }'
+
+```
+
+```
+{
+  "results": [
+    {
+      "metrics": [1423, 3847, 42],
+      "dimensions": []
+    }
+  ],
+  "query": {
+    "site_id": "yoursite.com",
+    "metrics": ["visitors", "pageviews", "bounce_rate"],
+    "date_range": ["2026-03-13", "2026-03-20"]
+  }
+}
+
+```
+
+Break down visitors by page:
+
+```
+curl --request POST \
+  --header 'Authorization: Bearer YOUR-API-KEY' \
+  --header 'Content-Type: application/json' \
+  --url 'https://www.example.com/api/v2/query' \
+  --data '{
+    "site_id": "yoursite.com",
+    "metrics": ["visitors", "pageviews"],
+    "date_range": "30d",
+    "dimensions": ["event:page"],
+    "pagination": {"limit": 5}
+  }'
+
+```
+
+The API supports filtering, time-based dimensions (`time:day`,`time:month`), and sorting. The rate limit is 600 requests per hour. See the full Stats API reference for all available metrics and dimensions.
+
+## How do you set up email reports?
+
+Email reports require working SMTP configuration in your`.env` file (covered in the environment setup above). Once SMTP is configured, any user can enable weekly or monthly email reports from the Plausible dashboard.
+
+Go to Site Settings > Email Reports. Add recipient addresses. Plausible sends a summary of visitors, top pages, and traffic sources on the schedule you choose.
+
+If emails are not arriving, check the Plausible container logs:
+
+```
+docker compose logs plausible | grep -i mail
+
+```
+
+Common issues: wrong SMTP port (use 587 for STARTTLS, 465 for implicit TLS with`SMTP_HOST_SSL_ENABLED=true`), or authentication failures.
+
+## How do you back up a self-hosted Plausible instance?
+
+Plausible stores data in two databases and one volume. Losing any of them means losing data. Back up all three.
+
+| Data | Storage | Backup method |
+| --- | --- | --- |
+| User accounts, site config | PostgreSQL | `pg_dump` |
+| Analytics events | ClickHouse | Volume backup or`BACKUP` command |
+| Certs, uploads | `plausible-data` volume | Volume copy |
+
+### Back up PostgreSQL
+
+```
+docker compose exec plausible_db pg_dump -U postgres plausible_db | gzip > backup-postgres-$(date +%F).sql.gz
+
+```
+
+### Back up ClickHouse
+
+ClickHouse 24.12 supports the`BACKUP` command natively. Run it inside the container:
+
+```
+docker compose exec plausible_events_db clickhouse-client \
+  --query "BACKUP DATABASE plausible_events_db TO Disk('backups', 'plausible-$(date +%F).zip')"
+
+```
+
+If the`backups` disk is not configured, use a volume-level backup instead:
+
+```
+docker compose stop plausible_events_db
+docker run --rm \
+  -v plausible-ce_event-data:/source:ro \
+  -v $(pwd)/backups:/backup \
+  alpine tar czf /backup/clickhouse-$(date +%F).tar.gz -C /source .
+docker compose start plausible_events_db
+
+```
+
+This stops ClickHouse briefly. For zero-downtime backups, configure the`backups` disk in ClickHouse or use clickhouse-backup.
+
+### Automate it
+
+Create a script at`/opt/plausible-backup.sh`:
+
+```
+#!/bin/bash
+set -euo pipefail
+BACKUP_DIR=/opt/backups/plausible
+mkdir -p "$BACKUP_DIR"
+cd /opt/plausible-ce
+
+# PostgreSQL
+docker compose exec -T plausible_db pg_dump -U postgres plausible_db \
+  | gzip > "$BACKUP_DIR/postgres-$(date +%F).sql.gz"
+
+# ClickHouse volume
+docker run --rm \
+  -v plausible-ce_event-data:/source:ro \
+  -v "$BACKUP_DIR":/backup \
+  alpine tar czf "/backup/clickhouse-$(date +%F).tar.gz" -C /source .
+
+# Plausible data volume
+docker run --rm \
+  -v plausible-ce_plausible-data:/source:ro \
+  -v "$BACKUP_DIR":/backup \
+  alpine tar czf "/backup/plausible-data-$(date +%F).tar.gz" -C /source .
+
+# Rotate: keep 14 days
+find "$BACKUP_DIR" -name "*.gz" -mtime +14 -delete
+
+echo "Backup complete: $(ls -lh $BACKUP_DIR/*$(date +%F)*)"
+
+```
+
+```
+chmod 700 /opt/plausible-backup.sh
+
+```
+
+Schedule it with cron for daily runs:
+
+```
+crontab -e
+
+```
+
+Add:
+
+```
+0 3 * * * /opt/plausible-backup.sh >> /var/log/plausible-backup.log 2>&1
+
+```
+
+For more on Docker volume backup strategies, see Docker Volume Backup and Restore on a VPS.
+
+## How do you update Plausible Community Edition safely?
+
+Plausible CE releases twice per year. Pin your version to a specific tag in`compose.yml` for predictable upgrades. The default config already pins to`v3.2.0`.
+
+Version pinning strategies:
+
+| Pin level | Tag example | What updates automatically |
+| --- | --- | --- |
+| Patch (safest) | `v3.2.0` | Nothing. Manual upgrades only. |
+| Minor | `v3.2` | Patch releases (bug fixes) |
+| Major | `v3` | Minor and patch releases |
+
+Recommended: pin to the patch level and upgrade manually after reading the release notes.
+
+### Upgrade procedure
+
+Read the release notes for breaking changes
+
+Back up your databases (run the backup script above)
+
+Pull the new version:
+
+```
+cd /opt/plausible-ce
+git fetch --tags
+git checkout v3.3.0  # replace with the target version
+
+```
+
+1. Start the updated containers:
+
+```
+docker compose up -d
+
+```
+
+Plausible runs database migrations automatically on startup. Watch the logs during the first boot:
+
+```
+docker compose logs -f plausible
+
+```
+
+Look for`[info] Migrations up to XXXXXXXX applied successfully` in the output. If you see migration errors, do not discard the old data. Check the upgrade wiki page for version-specific instructions.
+
+1. Clean up the old image:
+
+```
+docker image prune -f
+
+```
+
+Security patches are not backported to older versions. Subscribe to release notifications on GitHub: go to the repository, click Watch > Custom > Releases.
+
+Yes. Plausible does not set cookies. It does not collect or store personal data. Unique visitors are counted using a hash of the visitor's IP address combined with the User-Agent string. This hash is rotated every 24 hours and is never stored in raw form. The raw IP address is discarded after hashing.
+
+This means:
+
+- No cookie consent banner needed under GDPR, CCPA, or PECR
+- No personal data processing, so GDPR Article 6 lawful basis requirements for personal data do not apply
+- Self-hosting means data never leaves your server and never crosses to a third-party processor
+- You remain the sole data controller with no sub-processor agreements needed for analytics
+
+If you host your VPS in the EU (Virtua Cloud servers are located in European data centers), your analytics data stays in the EU. No Schrems II transfer concerns.
+
+This is why many indie hackers and privacy-focused developers switch from Google Analytics. No consent banners, no friction for visitors, and no data processor agreements to manage.
+
+## Monitoring ClickHouse resource usage
+
+ClickHouse is the most resource-hungry component. At idle with low traffic, it uses around 500 MB of RAM. During queries over large datasets, it can spike to 2-3 GB. If your VPS has only 2 GB total RAM, you may see OOM kills during busy periods.
+
+Watch memory usage:
+
+```
+docker stats plausible_events_db --no-stream
+
+```
+
+```
+CONTAINER ID   NAME                  CPU %   MEM USAGE / LIMIT   MEM %
+a1b2c3d4e5f6   plausible_events_db   0.50%   487MiB / 3.84GiB    12.38%
+
+```
+
+The ClickHouse configuration shipped with Plausible CE already includes low-resource overrides (via`low-resources.xml` and`default-profile-low-resources-overrides.xml`). These limit memory usage for merges and queries.
+
+If you need to tune further, create a`clickhouse/custom.xml` override and mount it in`compose.override.yml`. For resource limits in Docker Compose, see Docker Compose Resource Limits, Healthchecks, and Restart Policies.
+
+Check ClickHouse logs for warnings:
+
+```
+docker compose logs plausible_events_db | grep -i "memory\|oom"
+
+```
+
+## Something went wrong?
+
+Containers not starting: Check`docker compose logs `. Common causes: port conflicts, missing`.env` variables, ClickHouse failing SSE 4.2 check on older CPUs.
+
+"Bad Request" on login page: Your`BASE_URL` does not match the URL you are accessing. Plausible checks the origin header against`BASE_URL` to prevent cross-site request forgery.
+
+Tracking script not recording visits: Open browser dev tools, check the Network tab for requests to`/api/event`. A 202 response means the event was accepted. If you see CORS errors, your reverse proxy is stripping headers. Make sure the proxy passes the`Host` header.
+
+Email reports not sending: Verify SMTP credentials. Check logs with`docker compose logs plausible | grep -i smtp`. Test your SMTP server independently with`swaks` or`openssl s_client`.
+
+ClickHouse OOM killed: Your VPS does not have enough RAM. Upgrade to at least 4 GB, or reduce`max_memory_usage` in a ClickHouse config override.
+
+Dashboard shows zero visitors after setup: The tracking script may be blocked by ad blockers. Consider proxying the script through your main domain. Plausible's docs call this a proxy setup.
+
+To monitor your Plausible instance uptime, see Self-Host Uptime Kuma and Beszel on a VPS with Docker Compose.
+
+Ready to try it yourself?
+
+Deploy Plausible Analytics on your own VPS in minutes. →
