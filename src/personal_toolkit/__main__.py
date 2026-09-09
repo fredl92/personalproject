@@ -2,9 +2,11 @@ import argparse
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
@@ -12,7 +14,7 @@ from pathlib import Path
 from .config import Settings, atomic_write, initialize
 from .dashboard import configuration, render as render_dashboard
 from .jobs import JobStore
-from .pipeline import download, generate, summarize, transcribe
+from .pipeline import download, generate, summarize, transcribe, whisper_runtime
 
 
 def compose(settings, arguments):
@@ -34,12 +36,39 @@ def model_installed(models, wanted):
     return bool(wanted) and any(name == wanted for name in names)
 
 
+def path_export_hint(settings):
+    return "export PATH=" + shlex.quote(str(settings.root / "bin")) + ':"$PATH"'
+
+
+def docker_note():
+    if shutil.which("docker") is None:
+        return "Docker is not installed. Needed only for the dashboard and optional modules, not for pt pipeline."
+    try:
+        subprocess.run(["docker", "info"], capture_output=True, timeout=5, check=True)
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        return "Docker is installed but the daemon is not running. Start Docker Desktop before pt dashboard."
+    return "Docker is running. Use it for pt dashboard and optional modules; native pt pipeline does not need it."
+
+
 def doctor(settings):
     checks = [("Python >= 3.10", sys.version_info >= (3, 10), "Install Python 3.10 or newer."),
               ("yt-dlp", shutil.which("yt-dlp") is not None, "Run make setup to install Python packages."),
               ("ffmpeg", shutil.which("ffmpeg") is not None, "Install ffmpeg (brew or apt), then rerun make setup."),
               ("faster-whisper", importlib.util.find_spec("faster_whisper") is not None,
                "Run make setup to install Python packages.")]
+    notes = []
+    pt_path = shutil.which("pt")
+    if pt_path:
+        notes.append("pt is on PATH (" + pt_path + ").")
+    else:
+        notes.append("pt is not on PATH. Open a new Terminal after install, or run: " + path_export_hint(settings))
+    try:
+        runtime = whisper_runtime(settings)
+        notes.append("Whisper uses " + runtime["device"] + "/" + runtime["compute_type"] +
+                     " with cache " + runtime["download_root"] +
+                     ". On Apple Silicon this is Accelerate on CPU, not a Metal GPU.")
+    except ValueError as error:
+        checks.append(("Whisper settings", False, str(error)))
     try:
         with urllib.request.urlopen(settings.get("OLLAMA_URL").rstrip("/") + "/api/tags", timeout=5) as response:
             payload = json.load(response)
@@ -48,13 +77,26 @@ def doctor(settings):
         checks.append(("Ollama reachable", True, ""))
         checks.append(("Ollama model " + wanted, model_installed(models, wanted),
                        "Start Ollama and run: ollama pull " + wanted))
-    except Exception:
-        checks.append(("Ollama reachable", False, "Start Ollama (brew services start ollama) and run pt doctor again."))
+    except urllib.error.HTTPError as error:
+        checks.append(("Ollama reachable", False,
+                       f"Ollama answered HTTP {error.code}. Check the service, then run pt doctor again."))
+    except urllib.error.URLError as error:
+        reason = str(getattr(error, "reason", error)).lower()
+        if "refused" in reason:
+            hint = "Ollama is not running. On a Mac: brew services start ollama"
+        else:
+            hint = "Cannot reach Ollama at " + settings.get("OLLAMA_URL") + ". On a Mac: brew services start ollama"
+        checks.append(("Ollama reachable", False, hint + " and run pt doctor again."))
+    except (TimeoutError, json.JSONDecodeError, OSError):
+        checks.append(("Ollama reachable", False,
+                       "Ollama did not return a valid model list. Start it and run pt doctor again."))
+    notes.append(docker_note())
     for name, passed, hint in checks:
         print(("OK   " if passed else "FAIL ") + name)
         if not passed and hint:
             print("      " + hint)
-    print("Docker and Node.js are optional: needed only for automation/design.")
+    for note in notes:
+        print("NOTE " + note)
     print("Recent jobs: pt jobs")
     return 0 if all(passed for _, passed, _ in checks) else 1
 

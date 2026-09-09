@@ -44,7 +44,9 @@ jobs:
           test -f "$toolkit_payload/dashboard/index.html"
           test -f "$toolkit_payload/dashboard/app.js"
           test -f "$toolkit_payload/dashboard/nginx.conf"
+          test -f "$toolkit_payload/dashboard/status-proxy.stub.conf"
           test ! -e "$toolkit_payload/dashboard/config.js"
+          test ! -e "$toolkit_payload/dashboard/status-proxy.conf"
           test ! -e "$toolkit_payload/.env"
           test ! -e "$toolkit_payload/services"
           test ! -e "$toolkit_payload/data"
@@ -91,7 +93,12 @@ jobs:
       - name: Real audio transcription and Dutch summary
         run: |
           sudo apt-get update -qq || true
-          sudo apt-get install -y -qq espeak-ng
+          if ! sudo apt-get install -y -qq --no-install-recommends espeak-ng; then
+            sudo rm -f /etc/apt/sources.list.d/google-chrome*.list \
+                       /etc/apt/sources.list.d/microsoft-prod.list
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends espeak-ng
+          fi
           espeak-ng -v nl -s 140 -w data/jobs/smoke.wav "Dit is een test van de persoonlijke toolkit. We bespreken vandaag het gezinsbudget. Volgende week vergelijken we de energiekosten. De afspraak is om eerst de facturen te verzamelen en daarna een beslissing te nemen."
           docker compose exec -T pipeline-worker python -m personal_toolkit pipeline /data/jobs/smoke.wav
           python3 scripts/verify-smoke.py

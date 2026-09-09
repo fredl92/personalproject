@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -10,6 +11,8 @@ from pathlib import Path
 from .config import atomic_write
 
 COOKIE_BROWSERS = ("brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi")
+WHISPER_DEVICES = ("cpu", "cuda", "auto")
+WHISPER_COMPUTE_TYPES = ("int8", "int8_float16", "int8_float32", "int16", "float16", "float32", "default")
 
 
 def validate_url(value):
@@ -42,6 +45,36 @@ def cookie_browser(settings):
     if value not in COOKIE_BROWSERS:
         raise ValueError("YTDLP_COOKIES_FROM_BROWSER must be empty or one of: " + ", ".join(COOKIE_BROWSERS))
     return value
+
+
+def whisper_cpu_threads(settings):
+    raw = (settings.get("WHISPER_CPU_THREADS") or "").strip()
+    if not raw:
+        return 0
+    if not raw.isascii() or not raw.isdigit() or not 1 <= int(raw) <= 32:
+        raise ValueError("WHISPER_CPU_THREADS must be empty (auto) or an integer from 1 to 32.")
+    return int(raw)
+
+
+def whisper_runtime(settings):
+    """CPU is the supported path. On Apple Silicon this uses Accelerate, not Metal GPU."""
+    device = (settings.get("WHISPER_DEVICE") or "cpu").strip().lower()
+    compute = (settings.get("WHISPER_COMPUTE_TYPE") or "int8").strip().lower()
+    if device not in WHISPER_DEVICES:
+        raise ValueError("WHISPER_DEVICE must be cpu, cuda or auto.")
+    if compute not in WHISPER_COMPUTE_TYPES:
+        raise ValueError("WHISPER_COMPUTE_TYPE must be a CTranslate2 type such as int8.")
+    if sys.platform == "darwin" and device == "cuda":
+        raise ValueError("CUDA is not available on macOS. Keep WHISPER_DEVICE=cpu; "
+                         "faster-whisper has no Metal GPU path, but Apple Silicon still uses Accelerate on CPU.")
+    cache = settings.path("WHISPER_CACHE_DIR")
+    cache.mkdir(parents=True, exist_ok=True)
+    return {
+        "device": device,
+        "compute_type": compute,
+        "cpu_threads": whisper_cpu_threads(settings),
+        "download_root": str(cache),
+    }
 
 
 def _last_output_line(text, limit=300):
@@ -81,8 +114,10 @@ def transcribe(source, target, settings):
     source = Path(source).expanduser()
     if not source.is_file():
         raise ValueError(f"Media file not found: {source}")
-    model = WhisperModel(settings.get("WHISPER_MODEL"), device=settings.get("WHISPER_DEVICE"),
-                         compute_type=settings.get("WHISPER_COMPUTE_TYPE"))
+    runtime = whisper_runtime(settings)
+    model = WhisperModel(settings.get("WHISPER_MODEL"), device=runtime["device"],
+                         compute_type=runtime["compute_type"], cpu_threads=runtime["cpu_threads"],
+                         download_root=runtime["download_root"])
     options = {"beam_size": 5, "vad_filter": True}
     language = whisper_language(settings)
     if language:

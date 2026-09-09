@@ -5,6 +5,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY src /app/src
 RUN useradd --create-home --uid 1000 toolkit && mkdir -p /data/jobs /cache && chown -R toolkit:toolkit /data /cache
-ENV PYTHONPATH=/app/src PERSONAL_TOOLKIT_HOME=/app JOBS_DIR=/data/jobs HF_HOME=/cache
+ENV PYTHONPATH=/app/src PERSONAL_TOOLKIT_HOME=/app JOBS_DIR=/data/jobs WHISPER_CACHE_DIR=/cache HF_HOME=/cache
 USER toolkit
 CMD ["python", "-m", "personal_toolkit", "worker"]

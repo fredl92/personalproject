@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -92,7 +93,8 @@ class PipelineTests(Workspace):
         segments = segments if segments is not None else [types.SimpleNamespace(start=12.1, end=15.2, text=' Bespreek het budget. ')]
         class WhisperModel:
             def __init__(self, *args, **kwargs):
-                pass
+                captured['init_args'] = args
+                captured['init_kwargs'] = kwargs
             def transcribe(self, source, **kwargs):
                 captured['source'] = source
                 captured['kwargs'] = kwargs
@@ -106,6 +108,11 @@ class PipelineTests(Workspace):
         with patch.dict(sys.modules, {'faster_whisper': fake}):
             text = pipeline.transcribe(source, self.root / 'transcript.txt', self.settings)
         self.assertEqual(captured['source'], str(source))
+        self.assertEqual(captured['init_kwargs']['device'], 'cpu')
+        self.assertEqual(captured['init_kwargs']['compute_type'], 'int8')
+        self.assertEqual(captured['init_kwargs']['cpu_threads'], 0)
+        self.assertEqual(captured['init_kwargs']['download_root'], str(self.settings.path('WHISPER_CACHE_DIR')))
+        self.assertTrue(self.settings.path('WHISPER_CACHE_DIR').is_dir())
         self.assertIn('[00:00:12–00:00:15]', text)
         self.assertEqual(json.loads((self.root / 'transcript.json').read_text())['language'], 'nl')
 
@@ -321,6 +328,24 @@ class DoctorAndJobsTests(Workspace):
         with self.assertRaises(ValueError):
             pipeline.whisper_language(self.settings)
 
+    def test_whisper_runtime_uses_cache_and_rejects_cuda_on_macos(self):
+        runtime = pipeline.whisper_runtime(self.settings)
+        self.assertEqual(runtime['device'], 'cpu')
+        self.assertEqual(runtime['download_root'], str(self.settings.path('WHISPER_CACHE_DIR')))
+        self.settings.values['WHISPER_DEVICE'] = 'cuda'
+        with patch('personal_toolkit.pipeline.sys.platform', 'darwin'), self.assertRaises(ValueError) as error:
+            pipeline.whisper_runtime(self.settings)
+        self.assertIn('Metal', str(error.exception))
+        self.settings.values['WHISPER_DEVICE'] = 'tpu'
+        with self.assertRaises(ValueError):
+            pipeline.whisper_runtime(self.settings)
+        self.settings.values['WHISPER_DEVICE'] = 'cpu'
+        self.settings.values['WHISPER_CPU_THREADS'] = '8'
+        self.assertEqual(pipeline.whisper_runtime(self.settings)['cpu_threads'], 8)
+        self.settings.values['WHISPER_CPU_THREADS'] = '99'
+        with self.assertRaises(ValueError):
+            pipeline.whisper_cpu_threads(self.settings)
+
     def test_download_error_uses_yt_dlp_message_and_rejects_cookie_injection(self):
         with patch('subprocess.run', return_value=types.SimpleNamespace(
                 stdout='', returncode=1, stderr='WARNING: sleep\nERROR: Private video\n')):
@@ -397,6 +422,46 @@ class DoctorAndJobsTests(Workspace):
         payload = json.dumps({'models': [{'unexpected': True}]}).encode()
         with patch('urllib.request.urlopen', return_value=__import__('io').BytesIO(payload)):
             self.assertEqual(doctor(self.settings), 1)
+
+    def test_doctor_reports_path_and_optional_docker_without_failing_core(self):
+        from io import StringIO
+        from personal_toolkit.__main__ import doctor
+        payload = json.dumps({'models': [{'name': self.settings.get('OLLAMA_MODEL')}]}).encode()
+        real_which = shutil.which
+        real_find = importlib.util.find_spec
+
+        def which(name):
+            if name in ('pt', 'docker'):
+                return None
+            if name in ('yt-dlp', 'ffmpeg'):
+                return '/bin/' + name
+            return real_which(name)
+
+        def find_spec(name, package=None):
+            if name == 'faster_whisper':
+                return object()
+            return real_find(name, package)
+
+        with patch('urllib.request.urlopen', return_value=__import__('io').BytesIO(payload)), \
+                patch('shutil.which', side_effect=which), \
+                patch('importlib.util.find_spec', side_effect=find_spec), \
+                patch('sys.stdout', StringIO()) as out:
+            self.assertEqual(doctor(self.settings), 0)
+        text = out.getvalue()
+        self.assertIn('NOTE pt is not on PATH', text)
+        self.assertIn('export PATH=', text)
+        self.assertIn('Docker is not installed', text)
+        self.assertIn('Accelerate', text)
+        self.assertIn('OK   Ollama model', text)
+
+    def test_doctor_distinguishes_connection_refused(self):
+        from io import StringIO
+        from personal_toolkit.__main__ import doctor
+        refused = urllib.error.URLError(ConnectionRefusedError('refused'))
+        with patch('urllib.request.urlopen', side_effect=refused), patch('sys.stdout', StringIO()) as out:
+            self.assertEqual(doctor(self.settings), 1)
+        self.assertIn('brew services start ollama', out.getvalue())
+        self.assertIn('FAIL Ollama reachable', out.getvalue())
 
     def test_register_path_is_idempotent_and_quotes_spaces(self):
         home = self.root / 'home'
