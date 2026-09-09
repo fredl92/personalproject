@@ -414,7 +414,7 @@ class DoctorAndJobsTests(Workspace):
         line = next(row for row in text.splitlines() if row.startswith('export PATH='))
         expanded = subprocess.run(['bash', '-c', line + '\nprintf %s "$PATH"'],
                                   capture_output=True, text=True, check=True,
-                                  env={**env, 'PATH': '/usr/bin'})
+                                  env={**env, 'PATH': '/bin:/usr/bin'})
         self.assertEqual(expanded.stdout.split(':')[0], str(Path(toolkit) / 'bin'))
 
 
