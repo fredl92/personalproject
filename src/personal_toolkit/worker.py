@@ -64,7 +64,8 @@ def make_server(settings, host="0.0.0.0", port=8765):
                 return self.respond(429, {"error": "Queue is full; retry later"})
             try:
                 job = jobs.create(url, owner="worker")
-                future = executor.submit(jobs.execute, job["id"], settings)
+                future = executor.submit(jobs.execute, job["id"], settings,
+                                         report=lambda stage: print(stage + "...", flush=True))
                 future.add_done_callback(lambda _: capacity.release())
             except Exception:
                 capacity.release()

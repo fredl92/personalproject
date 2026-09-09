@@ -1,5 +1,6 @@
 """Generate public dashboard settings; never expose secrets or evaluate .env."""
 import json
+import re
 from urllib.parse import urlsplit
 
 from .config import atomic_write
@@ -37,7 +38,23 @@ def configuration(settings):
     apps["plausible"] = {"url": public_url(settings.get("PLAUSIBLE_BASE_URL")), "optional": True}
     apps["ollama"] = {"url": public_url(settings.get("OLLAMA_URL")), "optional": False}
     apps["ollama"]["healthUrl"] = apps["ollama"]["url"] + "/api/tags"
-    return {"apps": apps}
+    return {"apps": apps, "models": public_models(settings)}
+
+
+def public_models(settings):
+    def token(key):
+        value = settings.get(key)
+        if (not value or ".." in value or value.startswith("/") or
+                not re.fullmatch(r"[A-Za-z0-9._:/-]{1,80}", value)):
+            raise ValueError(f"{key} is not a public model identifier.")
+        return value
+
+    language = (settings.get("WHISPER_LANGUAGE") or "").strip().lower()
+    if not language or language in ("auto", "detect"):
+        language = "auto"
+    elif not re.fullmatch(r"[a-z]{2}(-[a-z]{2})?", language):
+        raise ValueError("WHISPER_LANGUAGE must be empty (auto) or a language code such as nl.")
+    return {"ollama": token("OLLAMA_MODEL"), "whisper": token("WHISPER_MODEL"), "whisperLanguage": language}
 
 
 def render(settings):

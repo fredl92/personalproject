@@ -2,7 +2,7 @@
 
 Lokale transcripties en Nederlandse samenvattingen, met optionele modules voor automatisering, ontwerp, analytics en beeldgeneratie.
 
-**Status:** herstelversie 1.0.1. Zie [validatie](docs/validation.md) voor wat automatisch getest wordt en wat nog een praktijktest vereist. Lokale modellen zijn geen garantie op correcte samenvattingen of gelijkwaardige kwaliteit aan een clouddienst.
+**Status:** 1.0.2. Zie [validatie](docs/validation.md) voor wat automatisch getest wordt en wat nog een praktijktest vereist. Lokale modellen zijn geen garantie op correcte samenvattingen of gelijkwaardige kwaliteit aan een clouddienst.
 
 ## Begin klein: de lokale kern
 
@@ -10,21 +10,25 @@ Benodigd: macOS op Apple Silicon met Homebrew, of Linux met Python 3.10+, ffmpeg
 
 ```bash
 make setup
-# Open daarna een nieuw Terminal-venster op macOS.
+# Open daarna een nieuw Terminal-venster zodat `pt` in je PATH staat.
 pt doctor
 pt pipeline "/pad/naar/opname met spaties.wav"
 pt pipeline "https://www.youtube.com/watch?v=VIDEO_ID"
+pt jobs
 ```
 
-`make setup` installeert de Python-pakketten, initialiseert `.env`, start Ollama op macOS en downloadt het ingestelde model. Op Linux moet Ollama vooraf geïnstalleerd en gestart zijn. Fouten stoppen de installatie met een foutcode; er volgt geen onterechte succesmelding.
+`make setup` installeert de Python-pakketten, initialiseert `.env`, zet `pt` in je PATH, start Ollama op macOS en downloadt het ingestelde model. Op Linux moet Ollama vooraf geïnstalleerd en gestart zijn. Fouten stoppen de installatie met een foutcode; er volgt geen onterechte succesmelding.
 
-Elke pipeline maakt een unieke map `data/jobs/<id>/` met `job.json`, een transcript met tijdsaanduidingen, segmenten in JSON en een Nederlandse `summary.md`. Lange transcripties worden in delen samengevat en daarna samengevoegd. Controleer belangrijke uitspraken steeds in het transcript. Bij een fout blijft reeds geproduceerde uitvoer bewaard.
+Elke pipeline maakt een unieke map `data/jobs/<id>/` met `job.json`, een transcript met tijdsaanduidingen, segmenten in JSON en een Nederlandse `summary.md` (kernpunten, beslissingen, open punten). Lange transcripties worden in delen samengevat en daarna samengevoegd. Controleer belangrijke uitspraken steeds in het transcript. Bij een fout blijft reeds geproduceerde uitvoer bewaard. `pt jobs` toont recente taken; `pt job` accepteert ook de eerste acht tekens van het ID.
+
+Standaard gebruikt Whisper Nederlands (`WHISPER_LANGUAGE=nl`). Zet de waarde leeg voor automatische herkenning, of `en` voor Engelstalige opnames. Downloads voor de pipeline worden als m4a-audio bewaard. Als YouTube een login vraagt, zet dan `YTDLP_COOKIES_FROM_BROWSER=chrome` (of `safari`, `firefox`, …) in `.env`.
 
 ```bash
 pt download "https://example.org/video" --audio
 pt transcribe "opname.wav"
 pt summarize "transcript.txt"
 pt ask "Leg obligatieduration eenvoudig uit"
+pt jobs
 pt job JOB_ID
 ```
 
@@ -40,7 +44,7 @@ pt dashboard
 # Of: make up en open http://localhost:8080
 ```
 
-Het dashboard begint met vier taken: samenvatten, uitschrijven, downloaden en een vraag stellen. Vul je vraag, videolink of volledig bestandspad in en klik op **Maak mijn commando**. Kopieer de gemaakte opdracht naar Terminal en druk op Enter. De browser voert geen opdrachten uit en bewaart je invoer niet. Bij een bestand gebruik je het volledige pad uit Finder (⌥ + ⌘ + C); er is geen upload.
+Het dashboard begint met vier taken: samenvatten, uitschrijven, downloaden en een vraag stellen. Vul je vraag, videolink of volledig bestandspad in en klik op **Maak mijn commando** (of ⌘ + Enter). Kopieer de gemaakte opdracht naar Terminal en druk op Enter. De browser voert geen opdrachten uit en bewaart je invoer niet. Bij een bestand gebruik je het volledige pad uit Finder (⌥ + ⌘ + C); er is geen upload. De AI-kaart toont het ingestelde Ollama- en Whisper-model.
 
 Bij elke app vind je **Openen** en gerichte **Hulp bij starten**. Extra tools en technische adressen staan ingeklapt. Kopiëren geeft directe bevestiging, met een handmatige uitweg als de browser het klembord blokkeert. Alleen het dashboard wordt gestart; kies de andere modules hieronder wanneer nodig. `pt dashboard --no-open` start zonder een browser te openen. `DASHBOARD_PORT` wijzigt de poort; de binding blijft beperkt tot localhost. Stop met `pt services down dashboard`.
 
@@ -64,7 +68,7 @@ Voor de Docker-modules: installeer en open Docker Desktop, voer `pt init` uit en
 
 ```bash
 make dmg
-open dist/Personal-Toolkit-1.0.1.dmg
+open dist/Personal-Toolkit-1.0.2.dmg
 ```
 
 Open de installer op de DMG. De toepassing kopieert bronbestanden naar `~/PersonalToolkit` en opent de kerninstallatie in Terminal. Bestaande `.env`, virtuele omgeving, downloads, transcripties, modellen, `services/` en andere gebruikersbestanden blijven behouden. De DMG bevat uitsluitend toegelaten bronbestanden en geen lokale gegevens. Er is geen Apple-signering/notarisatie; de macOS-CI test de bouw en inhoud, niet een interactieve installatie op jouw eigen Mac.
@@ -75,7 +79,7 @@ Open de installer op de DMG. De toepassing kopieert bronbestanden naar `~/Person
 
 **Als je al n8n/Penpot gebruikte:** maak eerst een back-up van `.env` en de Docker-volumes. De oorspronkelijke prototypeconfig gebruikte een vast Penpot-databasewachtwoord. Een nieuw `.env`-wachtwoord wijzigt geen bestaand PostgreSQL-account. Migreer dat account en de bijbehorende configuratie samen; verwijder het volume niet als oplossing. Roteer een bestaande n8n-encryptiesleutel nooit zonder een credentialmigratie. De toolkit verwijdert geen Docker-volumes.
 
-`WHISPER_MODEL`, `OLLAMA_MODEL` en de gepinde dienstversies staan in `.env`. `faster-whisper` draait in deze kern op CPU; GPU-versnelling op Apple Silicon is hiervoor niet geïmplementeerd. Penpot en zijn MCP hebben afzonderlijke, bij elkaar passende versie-instellingen.
+`WHISPER_MODEL`, `WHISPER_LANGUAGE`, `OLLAMA_MODEL` en de gepinde dienstversies staan in `.env`. `faster-whisper` draait in deze kern op CPU; GPU-versnelling op Apple Silicon is hiervoor niet geïmplementeerd. Penpot en zijn MCP hebben afzonderlijke, bij elkaar passende versie-instellingen.
 
 ## Ontwikkeling
 

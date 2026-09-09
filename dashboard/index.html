@@ -41,8 +41,8 @@
             <p id="input-error" class="field-error" role="alert" hidden></p>
           </div>
           <label id="audio-field" class="checkbox-row" hidden><input id="audio-only" type="checkbox" /> Alleen het geluid downloaden</label>
-          <div class="form-actions"><button class="btn btn-primary" type="submit">Maak mijn commando <span aria-hidden="true">→</span></button><span class="field-help">Uitvoeren doe je daarna in Terminal.</span></div>
-          <section id="task-result" class="task-result" aria-labelledby="result-heading" hidden>
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Maak mijn commando <span aria-hidden="true">→</span></button><span class="field-help">⌘ + Enter maakt het commando. Uitvoeren doe je daarna in Terminal.</span></div>
+          <section id="task-result" class="task-result" aria-labelledby="result-heading" aria-live="polite" hidden>
             <h3 id="result-heading" tabindex="-1">Klaar om uit te voeren</h3>
             <p>Kopieer dit commando, plak het in Terminal en druk op Enter.</p>
             <div class="command-box"><code id="generated-command"></code><button id="copy-command" type="button" class="btn btn-primary">Kopieer commando</button></div>
@@ -53,7 +53,7 @@
       </section>
 
       <aside class="sidebar" aria-label="Hulp bij je taak">
-        <section class="panel ai-panel" aria-labelledby="ai-heading"><span class="section-kicker">Voor vragen en samenvattingen</span><h2 id="ai-heading">Je lokale AI</h2><div id="ai-status"></div><p class="muted">Ollama voert het taalmodel uit. Het antwoord verschijnt in Terminal.</p><button class="btn btn-secondary" type="button" data-help="ollama">Hulp bij je AI</button></section>
+        <section class="panel ai-panel" aria-labelledby="ai-heading"><span class="section-kicker">Voor vragen en samenvattingen</span><h2 id="ai-heading">Je lokale AI</h2><div id="ai-status"></div><p id="ai-model" class="muted">Ollama voert het taalmodel uit. Het antwoord verschijnt in Terminal.</p><button class="btn btn-secondary" type="button" data-help="ollama">Hulp bij je AI</button></section>
         <section class="panel" id="help" aria-labelledby="help-heading"><h2 id="help-heading">Eerste keer?</h2><ol class="steps"><li><strong>Kies je taak</strong><span>Vul een vraag, link of bestandspad in.</span></li><li><strong>Kopieer het commando</strong><span>De juiste opdracht staat voor je klaar.</span></li><li><strong>Plak in Terminal</strong><span>Druk op Enter om te starten.</span></li></ol><details class="terminal-help"><summary>Mijn bestandspad vinden</summary><p>Selecteer je opname in Finder. Druk op <kbd>⌥</kbd> + <kbd>⌘</kbd> + <kbd>C</kbd> om het volledige pad te kopiëren. Plak dat in het invoerveld.</p></details><p class="privacy-note">Je invoer wordt niet in dit dashboard opgeslagen.</p></section>
       </aside>
     </div>

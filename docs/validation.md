@@ -4,15 +4,16 @@
 
 - Bash/Python/JSON-syntaxis en detectie van mergeconflictmarkeringen.
 - Configuratie met bestaande placeholders, idempotente sleutelgeneratie, relatieve paden en bestandstoegang.
-- Transcriptie met spaties, aanhalingstekens en Unicode in bestandsnamen, zonder code-interpolatie.
-- Lange transcripties, lege audio, ontbrekende/onvolledige modelantwoorden.
+- Transcriptie met spaties, aanhalingstekens en Unicode in bestandsnamen, zonder code-interpolatie. Standaardtaal Nederlands, met auto-detectie wanneer `WHISPER_LANGUAGE` leeg is.
+- Lange transcripties, lege audio, ontbrekende/onvolledige modelantwoorden. Tijdelijke Ollama-netwerkfouten worden beperkt opnieuw geprobeerd; HTTP-clientfouten niet.
+- Downloadfouten tonen de laatste yt-dlp-regel in plaats van alleen een exitcode. Audio-extractie naar m4a; optionele, toegelaten browsercookies.
+- Taakstatus, overzicht via `pt jobs`, ID-prefix, behoud van gedeeltelijke uitvoer en herkenning van een onderbroken taak na herstart.
 - Lokale HTTP-aanroep van Ollama met JSON; asynchrone worker-API met authenticatie en invoercontrole.
-- Taakstatus, behoud van gedeeltelijke uitvoer en herkenning van een onderbroken taak na herstart.
 - Herinstallatie en DMG-bronselectie met behoud van gebruikersbestanden en uitsluiting van lokale gegevens.
 - Samenvoegen van Cursor-configuratie zonder verlies van bestaande servers.
-- Dashboardconfiguratie zonder shell-uitvoering of geheime waarden; aangepaste poorten en afzonderlijke start van de dashboardmodule.
+- Dashboardconfiguratie zonder shell-uitvoering of geheime waarden; publieke modelnamen; aangepaste poorten en afzonderlijke start van de dashboardmodule.
 - Browserstatus: HTTP-fouten, afgeschermde antwoorden, verbindingsfouten en time-outs worden niet als succesvol weergegeven.
-- Taakcommando's: echte shell-parsing van vragen en bestandsnamen met quotes, spaties, Unicode en shelltekens; videolinks met queryparameters, audioselectie, thuismappen en ongeldige invoer.
+- Taakcommando's: echte shell-parsing van vragen en bestandsnamen met quotes, spaties, Unicode en shelltekens; videolinks met queryparameters, audioselectie, thuismappen en ongeldige invoer. PATH-registratie zonder bestaande shellconfig te overschrijven.
 - Dashboardbestanden gaan mee in de installer; gegenereerde lokale dashboardconfiguratie blijft uitgesloten.
 
 Deze regressietests gebruiken modeldoubles; ze meten geen herkenningskwaliteit of modelsnelheid.

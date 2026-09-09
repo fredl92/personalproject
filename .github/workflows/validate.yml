@@ -90,7 +90,7 @@ jobs:
           docker compose exec -T n8n n8n import:workflow --input=/tmp/toolkit-workflow.json
       - name: Real audio transcription and Dutch summary
         run: |
-          sudo apt-get update -qq
+          sudo apt-get update -qq || true
           sudo apt-get install -y -qq espeak-ng
           espeak-ng -v nl -s 140 -w data/jobs/smoke.wav "Dit is een test van de persoonlijke toolkit. We bespreken vandaag het gezinsbudget. Volgende week vergelijken we de energiekosten. De afspraak is om eerst de facturen te verzamelen en daarna een beslissing te nemen."
           docker compose exec -T pipeline-worker python -m personal_toolkit pipeline /data/jobs/smoke.wav

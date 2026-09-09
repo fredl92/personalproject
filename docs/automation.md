@@ -23,4 +23,6 @@ pt services down automation
 
 De Docker-Ollama heeft een andere modelopslag dan de native Ollama op je Mac. Verander je `OLLAMA_MODEL`, voer dan opnieuw `pt services up automation` uit om dat model op te halen. Docker gebruikt hier CPU, geen Apple Metal.
 
+Voor lastige YouTube-downloads kun je in `.env` `YTDLP_COOKIES_FROM_BROWSER=chrome` zetten (alleen een toegelaten browsernaam). De worker in Docker heeft geen toegang tot je macOS-browsers; gebruik cookies vooral bij de native CLI (`pt pipeline` / `pt download`).
+
 Gebruik voor een eerste praktijktest een korte, publiek bereikbare video. Beschikbaarheid/authenticatie van externe videosites is niet gegarandeerd. De CI test een gecontroleerd audiobestand; de kwaliteit van Nederlandse samenvattingen moet je op representatieve opnames controleren.
