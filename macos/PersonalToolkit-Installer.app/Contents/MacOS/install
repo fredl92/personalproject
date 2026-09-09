@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+TOOLKIT_SRC="${APP_DIR}/Contents/Resources/toolkit"
+INSTALL_DIR="${HOME}/PersonalToolkit"
+# Paths are passed as argv, never interpolated into AppleScript source.
+osascript -e 'display dialog "Install/update Personal Toolkit in ~/PersonalToolkit? Existing data and configuration are preserved. Homebrew is required. Docker modules remain optional." buttons {"Cancel", "Install"} default button "Install"' >/dev/null
+bash "${TOOLKIT_SRC}/scripts/copy-toolkit.sh" "$TOOLKIT_SRC" "$INSTALL_DIR"
+osascript - "$INSTALL_DIR" <<'APPLESCRIPT'
+on run argv
+  set target to item 1 of argv
+  tell application "Terminal"
+    activate
+    do script "cd " & quoted form of target & " && bash scripts/install-macos.sh && echo 'Core setup completed.'"
+  end tell
+end run
+APPLESCRIPT

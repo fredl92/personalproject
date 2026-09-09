@@ -1,0 +1,3 @@
+# Direct dependencies pinned; upgrade deliberately and run the tests.
+yt-dlp==2026.08.19
+faster-whisper==1.2.1

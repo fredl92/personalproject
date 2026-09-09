@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON="${ROOT}/.venv/bin/python"
+if [[ ! -x "$PYTHON" ]]; then PYTHON="python3"; fi
+export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+export PERSONAL_TOOLKIT_HOME="$ROOT"
+export PATH="${ROOT}/.venv/bin:${PATH}"
+exec "$PYTHON" -m personal_toolkit "$@"
