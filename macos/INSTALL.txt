@@ -1,4 +1,4 @@
-Personal Toolkit 1.0.4 — macOS
+Personal Toolkit 1.0.5 — macOS
 
 1. Homebrew moet aanwezig zijn (https://brew.sh).
 2. Open PersonalToolkit-Installer en bevestig de installatie.

@@ -2,7 +2,7 @@
 
 Lokale transcripties en Nederlandse samenvattingen, met optionele modules voor automatisering, ontwerp, analytics en beeldgeneratie.
 
-**Status:** 1.0.4. Zie [validatie](docs/validation.md) voor wat automatisch getest wordt en wat nog een praktijktest vereist. Lokale modellen zijn geen garantie op correcte samenvattingen of gelijkwaardige kwaliteit aan een clouddienst.
+**Status:** 1.0.5. Zie [validatie](docs/validation.md) voor wat automatisch getest wordt en wat nog een praktijktest vereist. Lokale modellen zijn geen garantie op correcte samenvattingen of gelijkwaardige kwaliteit aan een clouddienst.
 
 ## Begin klein: de lokale kern
 
@@ -21,7 +21,7 @@ pt retry JOB_ID
 
 `make setup` installeert de Python-pakketten, initialiseert `.env`, zet `pt` in je PATH, start Ollama op macOS en downloadt het ingestelde model. Op Linux moet Ollama vooraf geïnstalleerd en gestart zijn. Fouten stoppen de installatie met een foutcode; er volgt geen onterechte succesmelding. `pt doctor` keurt de kern (Python, ffmpeg, Whisper, Ollama + model). Ontbrekende PATH of Docker is een toelichting, geen kernfout: Docker is alleen nodig voor het dashboard en optionele modules. Onderbroken lokale taken (Ctrl-C of een gestopt proces) worden bij `pt doctor` / `pt jobs` als mislukt gemarkeerd.
 
-Elke pipeline maakt een unieke map `data/jobs/<id>/` met `job.json`, een transcript met tijdsaanduidingen, segmenten in JSON en een Nederlandse `summary.md` (kernpunten, beslissingen, open punten). Lange transcripties worden in delen samengevat en daarna samengevoegd; ontbrekende koppen worden aangevuld. Controleer belangrijke uitspraken steeds in het transcript. Bij een fout of onderbreking blijft reeds geproduceerde uitvoer bewaard. `pt jobs` toont status, stadium en tijd; `pt job` geeft een leesbaar overzicht (`--json` voor machines). `pt retry JOB_ID` hervat vanaf een bewaard transcript of gedownloade audio, zonder die stappen te herhalen. Een lokaal `file://`-pad mag bij `pt pipeline` / `pt transcribe`.
+Elke pipeline maakt een unieke map `data/jobs/<id>/` met `job.json`, een transcript met tijdsaanduidingen, segmenten in JSON en een Nederlandse `summary.md` (kernpunten, beslissingen, open punten). Lange transcripties worden in delen samengevat en daarna samengevoegd; ontbrekende koppen of lege bullets worden aangevuld met `geen`. Tijdens transcriptie en samenvatting toont Terminal stadia (`transcribing 00:12:04`, `summarizing 1/3`) en, bij een lange Ollama-wacht, een heartbeat op stderr. Controleer belangrijke uitspraken steeds in het transcript. Bij een fout of onderbreking blijft reeds geproduceerde uitvoer bewaard. `pt jobs` toont status, stadium en tijd; `pt job` geeft een leesbaar overzicht (`--json` voor machines). `pt retry JOB_ID` hervat vanaf een bewaard transcript of bruikbare audio; lege, corrupte of `.part`-bestanden worden overgeslagen en opnieuw gedownload. Twee retries van dezelfde taak tegelijk worden geweigerd. Een lokaal `file://`-pad mag bij `pt pipeline` / `pt transcribe`.
 
 Standaard gebruikt Whisper Nederlands (`WHISPER_LANGUAGE=nl`). Zet de waarde leeg voor automatische herkenning, of `en` voor Engelstalige opnames. Downloads voor de pipeline worden als m4a-audio bewaard. Als YouTube een login vraagt, zet dan `YTDLP_COOKIES_FROM_BROWSER=chrome` (of `safari`, `firefox`, …) in `.env`.
 
@@ -71,7 +71,7 @@ Voor de Docker-modules: installeer en open Docker Desktop, voer `pt init` uit en
 
 ```bash
 make dmg
-open dist/Personal-Toolkit-1.0.4.dmg
+open dist/Personal-Toolkit-1.0.5.dmg
 ```
 
 Open de installer op de DMG. De toepassing kopieert bronbestanden naar `~/PersonalToolkit` en opent de kerninstallatie in Terminal. Bestaande `.env`, virtuele omgeving, downloads, transcripties, modellen, `services/` en andere gebruikersbestanden blijven behouden. De DMG bevat uitsluitend toegelaten bronbestanden en geen lokale gegevens. Er is geen Apple-signering/notarisatie; de macOS-CI test de bouw en inhoud, niet een interactieve installatie op jouw eigen Mac.

@@ -1,4 +1,5 @@
 import datetime
+import fcntl
 import json
 import os
 import re
@@ -114,6 +115,17 @@ class JobStore:
                 error="Interrupted before completion; existing output was preserved. Resume with: pt retry " + job_id[:8]))
         return interrupted
 
+    def running_local(self, exclude_id=None):
+        active = []
+        for job in self.list(100):
+            if job.get("owner") != "local" or job.get("status") != "running":
+                continue
+            if exclude_id and job.get("id") == exclude_id:
+                continue
+            if pid_running(job.get("pid")):
+                active.append(job)
+        return active
+
     def retry(self, job_id, settings, runner=run_pipeline, report=None):
         job = self.get(job_id)
         job_id = job["id"]
@@ -127,22 +139,36 @@ class JobStore:
     def execute(self, job_id, settings, runner=run_pipeline, report=None):
         job = self.get(job_id)
         job_id = job["id"]
+        lock_path = self.folder(job_id) / ".lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            self.update(job_id, status="running", pid=os.getpid(), error=None)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ValueError("This job is already running in another process.") from None
+            try:
+                self.update(job_id, status="running", pid=os.getpid(), error=None)
 
-            def progress(stage):
-                if report:
-                    report(stage)
-                self.update(job_id, stage=stage)
+                def progress(stage):
+                    if report:
+                        report(stage)
+                    self.update(job_id, stage=stage)
 
-            result = runner(job["source"], self.folder(job_id), settings, progress)
-            return self.update(job_id, status="succeeded", stage="complete", result=result, pid=None, error=None)
-        except Exception as error:
-            return self.update(job_id, status="failed", pid=None, error=str(error)[:1000])
-        except KeyboardInterrupt:
-            self.update(job_id, status="failed", pid=None,
-                        error="Interrupted (Ctrl-C). Existing output was preserved. Resume with: pt retry " + job_id[:8])
-            raise
+                result = runner(job["source"], self.folder(job_id), settings, progress)
+                return self.update(job_id, status="succeeded", stage="complete", result=result, pid=None, error=None)
+            except Exception as error:
+                return self.update(job_id, status="failed", pid=None, error=str(error)[:1000])
+            except KeyboardInterrupt:
+                self.update(job_id, status="failed", pid=None,
+                            error="Interrupted (Ctrl-C). Existing output was preserved. Resume with: pt retry " + job_id[:8])
+                raise
+        finally:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            os.close(fd)
 
 
 def artifacts(folder):

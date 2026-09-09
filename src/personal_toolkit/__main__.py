@@ -129,7 +129,7 @@ def print_jobs(jobs):
         if len(source) > 64:
             source = source[:61] + "..."
         stage = str(job.get("stage") or "—")
-        print(f"{job_id[:8]}  {str(job.get('status') or '?'):<10}  {stage:<18}  {short_time(job.get('updated_at'))}  {source}")
+        print(f"{job_id[:8]}  {str(job.get('status') or '?'):<10}  {stage:<22}  {short_time(job.get('updated_at'))}  {source}")
         if job.get("status") == "failed" and job.get("error"):
             print("           " + str(job["error"]).splitlines()[0][:120])
             print("           Resume: pt retry " + job_id[:8])
@@ -225,11 +225,12 @@ def main(argv=None):
         elif args.command == "transcribe":
             source = resolve_media_source(args.file)
             target = settings.path("TRANSCRIPTS_DIR") / (source.stem + "-" + uuid.uuid4().hex[:8] + ".txt")
-            transcribe(source, target, settings)
+            transcribe(source, target, settings, progress=lambda stage: print(stage + "...", flush=True))
             print(target)
         elif args.command == "summarize":
             transcript = args.transcript.expanduser()
-            result = summarize(transcript.read_text(encoding="utf-8"), settings)
+            result = summarize(transcript.read_text(encoding="utf-8"), settings,
+                               progress=lambda stage: print(stage + "...", flush=True))
             target = transcript.with_name(transcript.stem + "-summary.md")
             atomic_write(target, result + "\n")
             print(result + "\n\nSaved: " + str(target))
@@ -242,6 +243,10 @@ def main(argv=None):
             jobs = local_jobs(settings)
             job = jobs.create(args.source)
             print("Job: " + job["id"], flush=True)
+            others = jobs.running_local(exclude_id=job["id"])
+            if others:
+                print("NOTE another local job is still running (" + others[0]["id"][:8] +
+                      "). Whisper and Ollama share this machine.", flush=True)
             result = jobs.execute(job["id"], settings, report=lambda stage: print(stage + "...", flush=True))
             if result["status"] == "failed":
                 raise RuntimeError(result["error"])
@@ -260,6 +265,10 @@ def main(argv=None):
             jobs = local_jobs(settings)
             job = jobs.get(args.id)
             print("Retry: " + job["id"], flush=True)
+            others = jobs.running_local(exclude_id=job["id"])
+            if others:
+                print("NOTE another local job is still running (" + others[0]["id"][:8] +
+                      "). Whisper and Ollama share this machine.", flush=True)
             result = jobs.retry(job["id"], settings, report=lambda stage: print(stage + "...", flush=True))
             if result["status"] == "failed":
                 raise RuntimeError(result["error"])

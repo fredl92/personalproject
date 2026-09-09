@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { execFileSync } = require('node:child_process');
-const { checkStatus, safeUrl, CLI_COMMANDS, createCommand, describeModels, inspectOllamaHealth, cycleTask, localFilePath } = require('../dashboard/app.js');
+const { checkStatus, safeUrl, CLI_COMMANDS, createCommand, describeModels, inspectOllamaHealth, cycleTask, localFilePath, isMacPlatform, filePathHelp, commandShortcutHelp } = require('../dashboard/app.js');
 
 test('HTTP success is reachable, without claiming app health', async () => {
   const result = await checkStatus('http://localhost:5678/healthz', async () => ({ status: 200, ok: true, type: 'cors' }));
@@ -147,4 +147,14 @@ test('arrow keys cycle the task radiogroup', () => {
   assert.equal(cycleTask('download', 'Home'), 'pipeline');
   assert.equal(cycleTask('pipeline', 'End'), 'ask');
   assert.equal(cycleTask('pipeline', 'Enter'), 'pipeline');
+});
+
+test('platform hints distinguish Mac and other desktops', () => {
+  assert.equal(isMacPlatform({ platform: 'MacIntel' }), true);
+  assert.equal(isMacPlatform({ userAgentData: { platform: 'macOS' } }), true);
+  assert.equal(isMacPlatform({ platform: 'Linux x86_64' }), false);
+  assert.match(filePathHelp(true), /Finder/);
+  assert.match(filePathHelp(false), /volledige bestandspad/);
+  assert.match(commandShortcutHelp(true), /⌘/);
+  assert.match(commandShortcutHelp(false), /Ctrl/);
 });
