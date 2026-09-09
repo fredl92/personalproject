@@ -13,6 +13,23 @@ from .config import atomic_write
 COOKIE_BROWSERS = ("brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi")
 WHISPER_DEVICES = ("cpu", "cuda", "auto")
 WHISPER_COMPUTE_TYPES = ("int8", "int8_float16", "int8_float32", "int16", "float16", "float32", "default")
+MEDIA_SUFFIXES = {".m4a", ".mp3", ".wav", ".mp4", ".webm", ".mkv", ".aac", ".flac", ".ogg", ".opus", ".mov"}
+SUMMARY_INSTRUCTION = ("Maak een Nederlandse samenvatting met korte bullets onder deze koppen: "
+                       "Kernpunten; Beslissingen of conclusies; Open punten of vervolgstappen. "
+                       "Behoud concrete namen, cijfers en nuances. Vermeld bij elk punt een bestaande "
+                       "[HH:MM:SS]-tijdsaanduiding als de bron die bevat. Verzin geen tijdstippen, namen of feiten. "
+                       "Schrijf 'geen' onder een kop zonder inhoud.")
+MERGE_INSTRUCTION = ("Voeg de deelsamenvattingen samen tot één Nederlandse samenvatting. "
+                     "Gebruik exact deze koppen: Kernpunten; Beslissingen of conclusies; Open punten of vervolgstappen. "
+                     "Verwijder herhalingen. Behoud namen, cijfers, nuances en bestaande [HH:MM:SS]-tijden. "
+                     "Verzin niets. Schrijf 'geen' onder een kop zonder inhoud.")
+HEADING_PATTERNS = (
+    ("Kernpunten", re.compile(r"(?im)^(?:#{1,6}\s*)?kernpunten\b")),
+    ("Beslissingen of conclusies",
+     re.compile(r"(?im)^(?:#{1,6}\s*)?(?:beslissingen(?:\s+of\s+conclusies)?|conclusies)\b")),
+    ("Open punten of vervolgstappen",
+     re.compile(r"(?im)^(?:#{1,6}\s*)?(?:open punten(?:\s+of\s+vervolgstappen)?|vervolgstappen)\b")),
+)
 
 
 def validate_url(value):
@@ -22,6 +39,62 @@ def validate_url(value):
     if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError("Provide an http(s) video URL without embedded credentials.")
     return value
+
+
+def resolve_media_source(source):
+    """Accept a filesystem path or a local file:// URL. Video http(s) URLs stay with download()."""
+    if not isinstance(source, (str, Path)):
+        raise ValueError("Media path must be text")
+    value = str(source).strip()
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme == "file":
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("file URLs cannot contain credentials, query or fragment.")
+        host = (parsed.hostname or "").lower()
+        if host and host not in ("localhost",):
+            raise ValueError("Only local file:// paths are allowed.")
+        path = urllib.parse.unquote(parsed.path)
+        if not path or path == "/":
+            raise ValueError("file URL is missing a media path.")
+        return Path(path).expanduser().resolve()
+    if parsed.scheme in ("http", "https"):
+        raise ValueError("Expected a local media file. For a video link use pt pipeline <url>.")
+    return Path(value).expanduser().resolve()
+
+
+def existing_media(folder):
+    directory = Path(folder) / "media"
+    if not directory.is_dir():
+        return None
+    files = sorted(path for path in directory.iterdir()
+                   if path.is_file() and path.suffix.lower() in MEDIA_SUFFIXES)
+    return files[0] if len(files) == 1 else None
+
+
+def existing_transcript(folder):
+    path = Path(folder) / "transcript.txt"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    return text if text.strip() else None
+
+
+def normalize_summary(text):
+    """Keep model wording, but guarantee the three Dutch section headings exist."""
+    text = (text or "").strip()
+    if not text:
+        raise RuntimeError("Summary was empty.")
+    missing = [title for title, pattern in HEADING_PATTERNS if not pattern.search(text)]
+    if not missing:
+        return text
+    if len(missing) == len(HEADING_PATTERNS):
+        return ("## Kernpunten\n\n" + text + "\n\n"
+                "## Beslissingen of conclusies\n\ngeen\n\n"
+                "## Open punten of vervolgstappen\n\ngeen")
+    parts = [text]
+    parts.extend(f"## {title}\n\ngeen" for title in missing)
+    return "\n\n".join(parts)
 
 
 def timestamp(seconds):
@@ -111,7 +184,7 @@ def download(url, directory, audio=True, settings=None):
 
 def transcribe(source, target, settings):
     from faster_whisper import WhisperModel
-    source = Path(source).expanduser()
+    source = resolve_media_source(source)
     if not source.is_file():
         raise ValueError(f"Media file not found: {source}")
     runtime = whisper_runtime(settings)
@@ -170,7 +243,7 @@ def generate(text, settings, instruction, system=None):
             last_error = error
         except urllib.error.HTTPError as error:
             last_error = error
-            if error.code not in (502, 503, 504):
+            if error.code not in (500, 502, 503, 504):
                 break
         except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
             last_error = error
@@ -198,33 +271,39 @@ def generate(text, settings, instruction, system=None):
 def summarize(text, settings):
     if not text.strip():
         raise ValueError("Cannot summarize an empty transcript.")
-    instruction = ("Maak een Nederlandse samenvatting met korte bullets onder deze koppen: "
-                   "Kernpunten; Beslissingen of conclusies; Open punten of vervolgstappen. "
-                   "Behoud concrete namen, cijfers en nuances. Vermeld bij elk punt een bestaande "
-                   "[HH:MM:SS]-tijdsaanduiding als de bron die bevat. Verzin geen tijdstippen, namen of feiten. "
-                   "Schrijf 'geen' onder een kop zonder inhoud.")
     parts = list(chunks(text))
+    instruction = SUMMARY_INSTRUCTION
     for _ in range(8):
         summaries = [generate(part, settings, instruction) for part in parts]
         if len(summaries) == 1:
-            return summaries[0]
+            return normalize_summary(summaries[0])
         parts = list(chunks("\n\n".join(summaries)))
+        instruction = MERGE_INSTRUCTION
     raise RuntimeError("Transcript is too large to reduce reliably; split the recording.")
 
 
 def run_pipeline(source, folder, settings, progress=lambda stage: None):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
-    if urllib.parse.urlsplit(str(source)).scheme in ("http", "https"):
-        progress("downloading")
-        media = download(source, folder / "media", settings=settings)
-    else:
-        media = Path(source).expanduser().resolve()
-        if not media.is_file():
-            raise ValueError(f"Media file not found: {media}")
-    progress("transcribing")
     transcript = folder / "transcript.txt"
-    text = transcribe(media, transcript, settings)
+    text = existing_transcript(folder)
+    if text:
+        progress("reusing-transcript")
+    else:
+        source = str(source).strip()
+        if urllib.parse.urlsplit(source).scheme in ("http", "https"):
+            media = existing_media(folder)
+            if media:
+                progress("reusing-media")
+            else:
+                progress("downloading")
+                media = download(source, folder / "media", settings=settings)
+        else:
+            media = resolve_media_source(source)
+            if not media.is_file():
+                raise ValueError(f"Media file not found: {media}")
+        progress("transcribing")
+        text = transcribe(media, transcript, settings)
     progress("summarizing")
     summary = summarize(text, settings)
     summary_path = folder / "summary.md"

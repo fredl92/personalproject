@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { execFileSync } = require('node:child_process');
-const { checkStatus, safeUrl, CLI_COMMANDS, createCommand, describeModels, inspectOllamaHealth } = require('../dashboard/app.js');
+const { checkStatus, safeUrl, CLI_COMMANDS, createCommand, describeModels, inspectOllamaHealth, cycleTask, localFilePath } = require('../dashboard/app.js');
 
 test('HTTP success is reachable, without claiming app health', async () => {
   const result = await checkStatus('http://localhost:5678/healthz', async () => ({ status: 200, ok: true, type: 'cors' }));
@@ -80,6 +80,8 @@ test('copyable commands retain placeholders and quoted prompts', () => {
   assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt ask "jouw vraag"'));
   assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt services up automation'));
   assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt jobs'));
+  assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt retry <id>'));
+  assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt job <id>'));
 });
 
 test('model description uses public names as text', () => {
@@ -125,5 +127,24 @@ test('invalid task input produces actionable errors instead of commands', () => 
     ['download', 'http://user:secret@example.org/video'], ['download', 'not a link'],
     ['download', 'https://example.org/\nvideo'], ['transcribe', 'opname.wav'],
     ['transcribe', '/'], ['transcribe', '/tmp/a\0b'], ['pipeline', '/tmp/audio.wav', { source: 'other' }],
+    ['transcribe', 'file://example.org/tmp/clip.wav'], ['transcribe', 'file:///tmp/clip.wav?x=1'],
   ]) assert.throws(() => createCommand(task, value, options));
+});
+
+test('file URLs become local paths and stay one shell argument', () => {
+  const path = '/Users/Fré/Opnames/clip file.m4a';
+  const encoded = 'file:///Users/Fr%C3%A9/Opnames/clip%20file.m4a';
+  assert.equal(localFilePath(encoded), path);
+  assert.deepEqual(commandArguments(createCommand('transcribe', encoded)), ['transcribe', path]);
+  assert.deepEqual(commandArguments(createCommand('pipeline', encoded, { source: 'file' })), ['pipeline', path]);
+  assert.equal(localFilePath('file://localhost/tmp/clip.m4a'), '/tmp/clip.m4a');
+});
+
+test('arrow keys cycle the task radiogroup', () => {
+  assert.equal(cycleTask('pipeline', 'ArrowRight'), 'transcribe');
+  assert.equal(cycleTask('ask', 'ArrowRight'), 'pipeline');
+  assert.equal(cycleTask('pipeline', 'ArrowLeft'), 'ask');
+  assert.equal(cycleTask('download', 'Home'), 'pipeline');
+  assert.equal(cycleTask('pipeline', 'End'), 'ask');
+  assert.equal(cycleTask('pipeline', 'Enter'), 'pipeline');
 });

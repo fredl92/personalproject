@@ -59,7 +59,7 @@ function inspectOllamaHealth(body, wanted, fallback) {
 }
 
 const TASKS = {
-  pipeline: { title: "Samenvatting maken", short: "Samenvatten", icon: "≋", description: "Maak een transcript en Nederlandse samenvatting van een video of opname.", result: "De eerste verwerking kan even duren. Terminal toont waar het transcript en de samenvatting zijn opgeslagen." },
+  pipeline: { title: "Samenvatting maken", short: "Samenvatten", icon: "≋", description: "Maak een transcript en Nederlandse samenvatting van een video of opname.", result: "De eerste verwerking kan even duren. Terminal toont waar het transcript en de samenvatting zijn opgeslagen. Bij een fout of Ctrl-C blijft het transcript bewaard; hervat met pt retry <id>." },
   transcribe: { title: "Opname uitschrijven", short: "Uitschrijven", icon: "↳", description: "Zet een audio- of videobestand om naar tekst met tijdsaanduidingen.", result: "Terminal toont het pad naar je tekstbestand. Het spraakmodel wordt bij het eerste gebruik gedownload." },
   download: { title: "Video downloaden", short: "Downloaden", icon: "↓", description: "Bewaar een video of alleen het geluid op je Mac.", result: "Terminal toont waar je download is opgeslagen." },
   ask: { title: "Vraag aan je AI", short: "Vraag stellen", icon: "✦", description: "Laat je lokale AI iets uitleggen, ideeën geven of een tekst helpen schrijven.", result: "Het antwoord verschijnt in Terminal. Controleer belangrijke feiten altijd zelf." },
@@ -81,6 +81,8 @@ const CLI_COMMANDS = [
   { label: "Ontwerpen starten", cmd: "pt services up design" },
   { label: "Installatie controleren", cmd: "pt doctor" },
   { label: "Recente taken tonen", cmd: "pt jobs" },
+  { label: "Taakdetails tonen", cmd: "pt job <id>" },
+  { label: "Mislukte taak hervatten", cmd: "pt retry <id>" },
   { label: "Alle adressen tonen", cmd: "pt urls" },
 ];
 
@@ -97,12 +99,40 @@ function mediaUrl(value) {
   return shellQuote(value);
 }
 
+function localFilePath(value) {
+  if (!/^file:/i.test(value)) return value;
+  let url;
+  try { url = new URL(value); } catch { throw new Error("Plak een geldig bestandspad of een lokale file://-link."); }
+  if (url.protocol !== "file:" || url.username || url.password || url.search || url.hash) {
+    throw new Error("Gebruik een lokaal bestandspad, zonder gebruikersnaam, wachtwoord of extra parameters.");
+  }
+  const host = (url.hostname || "").toLowerCase();
+  if (host && host !== "localhost") throw new Error("Alleen lokale bestanden zijn toegestaan.");
+  try {
+    value = decodeURIComponent(url.pathname);
+  } catch {
+    throw new Error("De file://-link kon niet worden gelezen.");
+  }
+  if (!value || value === "/") throw new Error("Kies een bestand, niet alleen je thuismap.");
+  return value;
+}
+
 function mediaPath(value) {
+  value = localFilePath(value);
   if (!value.startsWith("/") && !value.startsWith("~/")) {
     throw new Error("Plak het volledige bestandspad uit Finder. Selecteer het bestand en druk op ⌥ + ⌘ + C.");
   }
   if (value === "/" || value === "~/") throw new Error("Kies een bestand, niet alleen je thuismap.");
   return value.startsWith("~/") ? '"$HOME"/' + shellQuote(value.slice(2)) : shellQuote(value);
+}
+
+function cycleTask(current, key, tasks = Object.keys(TASKS)) {
+  const index = tasks.indexOf(current);
+  if (key === "Home") return tasks[0];
+  if (key === "End") return tasks[tasks.length - 1];
+  const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[key];
+  if (!delta || index < 0) return current;
+  return tasks[(index + delta + tasks.length) % tasks.length];
 }
 
 function describeModels(cfg) {
@@ -169,13 +199,17 @@ function configureInput() {
   const input = document.getElementById("task-input");
   input.placeholder = ask ? "Bijvoorbeeld: leg obligatieduration uit in eenvoudige woorden." : file ? "/Users/…/Documents/opname.m4a" : "https://www.youtube.com/watch?v=…";
   input.rows = ask ? 4 : 2;
-  document.getElementById("input-help").textContent = ask ? "Stel je vraag in gewone taal." : file ? "Selecteer de opname in Finder, druk op ⌥ + ⌘ + C en plak het pad hier. Je uploadt geen bestand." : "Plak de link van de video die je wilt verwerken.";
+  document.getElementById("input-help").textContent = ask ? "Stel je vraag in gewone taal." : file ? "Selecteer de opname in Finder, druk op ⌥ + ⌘ + C en plak het pad hier. Een file://-link mag ook. Je uploadt geen bestand." : "Plak de link van de video die je wilt verwerken.";
   invalidateResult();
 }
 
 function selectTask(task, focus = true) {
   selectedTask = task;
-  for (const button of document.querySelectorAll("[data-task]")) button.setAttribute("aria-checked", String(button.dataset.task === task));
+  for (const button of document.querySelectorAll("[data-task]")) {
+    const on = button.dataset.task === task;
+    button.setAttribute("aria-checked", String(on));
+    button.tabIndex = on ? 0 : -1;
+  }
   document.getElementById("task-heading").textContent = TASKS[task].title;
   document.getElementById("task-description").textContent = TASKS[task].description;
   document.getElementById("task-input").value = "";
@@ -193,12 +227,20 @@ function bindTasks() {
     button.dataset.task = key;
     button.setAttribute("role", "radio");
     button.setAttribute("aria-checked", String(key === selectedTask));
+    button.tabIndex = key === selectedTask ? 0 : -1;
     const icon = element("span", "task-icon", task.icon);
     icon.setAttribute("aria-hidden", "true");
     button.append(icon, element("span", "", task.short));
     button.addEventListener("click", () => selectTask(key));
     choices.append(button);
   }
+  choices.addEventListener("keydown", event => {
+    if (!["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = cycleTask(selectedTask, event.key);
+    selectTask(next, false);
+    choices.querySelector('[data-task="' + CSS.escape(next) + '"]')?.focus();
+  });
   selectTask(selectedTask, false);
   document.getElementById("source-kind").addEventListener("change", configureInput);
   document.getElementById("audio-only").addEventListener("change", invalidateResult);
@@ -245,6 +287,8 @@ function statusElements(target, app, key) {
 function renderApps(cfg) {
   const empty = document.getElementById("apps-empty");
   if (empty) empty.remove();
+  const extraEmpty = document.getElementById("extra-empty");
+  if (extraEmpty) extraEmpty.remove();
   for (const key of ["n8n", "penpot", "plausible", "fooocus"]) {
     const app = cfg.apps[key];
     if (!app) continue;
@@ -413,5 +457,5 @@ function init() {
   setInterval(() => { if (!document.hidden) refreshStatus(); }, 60000);
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote, describeModels, inspectOllamaHealth };
+if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote, describeModels, inspectOllamaHealth, cycleTask, localFilePath };
 if (typeof document !== "undefined") init();

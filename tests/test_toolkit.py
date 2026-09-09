@@ -140,7 +140,54 @@ class PipelineTests(Workspace):
         self.assertTrue(all(len(text) <= 10000 for text, _ in seen))
         self.assertTrue(all('Nederlandse' in instruction for _, instruction in seen))
         self.assertTrue(any('Kernpunten' in instruction for _, instruction in seen))
+        self.assertTrue(any('deelsamenvattingen' in instruction for _, instruction in seen))
         self.assertIn('[00:00:12]', result)
+        self.assertIn('Kernpunten', result)
+
+    def test_normalize_summary_adds_missing_dutch_headings(self):
+        wrapped = pipeline.normalize_summary('- Budget [00:00:12]')
+        self.assertIn('## Kernpunten', wrapped)
+        self.assertIn('## Beslissingen of conclusies', wrapped)
+        self.assertIn('## Open punten of vervolgstappen', wrapped)
+        self.assertIn('- Budget [00:00:12]', wrapped)
+        structured = pipeline.normalize_summary('## Kernpunten\n- a\n## Beslissingen of conclusies\ngeen\n## Open punten of vervolgstappen\ngeen')
+        self.assertTrue(structured.startswith('## Kernpunten'))
+        partial = pipeline.normalize_summary('## Kernpunten\n- alleen dit')
+        self.assertIn('## Beslissingen of conclusies', partial)
+        with self.assertRaises(RuntimeError):
+            pipeline.normalize_summary('   ')
+
+    def test_file_url_and_resume_skip_completed_stages(self):
+        source = self.root / 'clip file.wav'
+        source.write_bytes(b'')
+        resolved = pipeline.resolve_media_source(source.as_uri())
+        self.assertEqual(resolved, source.resolve())
+        with self.assertRaises(ValueError):
+            pipeline.resolve_media_source('file://example.org/tmp/clip.wav')
+        with self.assertRaises(ValueError):
+            pipeline.resolve_media_source('file:///tmp/clip.wav?x=1')
+        with self.assertRaises(ValueError):
+            pipeline.resolve_media_source('https://example.org/video.mp4')
+        job = self.root / 'job'
+        (job / 'media').mkdir(parents=True)
+        (job / 'media' / 'clip.m4a').write_bytes(b'')
+        (job / 'transcript.txt').write_text('[00:00:01] Hallo daar.\n')
+        stages = []
+        with patch.object(pipeline, 'generate', return_value='- Hallo [00:00:01]') as generate:
+            result = pipeline.run_pipeline('https://example.org/video', job, self.settings, stages.append)
+        generate.assert_called()
+        self.assertEqual(stages, ['reusing-transcript', 'summarizing'])
+        self.assertIn('Hallo', Path(result['summary']).read_text())
+        (job / 'transcript.txt').unlink()
+        stages.clear()
+        fake, captured = self.fake_whisper()
+        with patch.dict(sys.modules, {'faster_whisper': fake}), \
+                patch.object(pipeline, 'generate', return_value='- Budget [00:00:12]'), \
+                patch.object(pipeline, 'download') as download:
+            pipeline.run_pipeline('https://example.org/video', job, self.settings, stages.append)
+        download.assert_not_called()
+        self.assertEqual(stages, ['reusing-media', 'transcribing', 'summarizing'])
+        self.assertTrue(captured['source'].endswith('clip.m4a'))
 
     def test_download_passes_url_as_single_argument(self):
         media = self.root / 'media file.wav'; media.touch()
@@ -294,6 +341,7 @@ class InstallerTests(Workspace):
         self.assertEqual(p.returncode,0,p.stderr)
         self.assertIn('pipeline',p.stdout)
         self.assertIn('jobs',p.stdout)
+        self.assertIn('retry',p.stdout)
 
     def test_cursor_merge_preserves_other_servers(self):
         project=self.root/'Auraxis';config=project/'.cursor/mcp.json';config.parent.mkdir(parents=True)
@@ -392,6 +440,12 @@ class DoctorAndJobsTests(Workspace):
             with self.assertRaises(RuntimeError):
                 pipeline.generate('text', self.settings, 'summarize')
         slept.assert_not_called()
+        ok = io.BytesIO(json.dumps({'response': 'ok', 'done': True}).encode())
+        server = urllib.error.HTTPError('http://127.0.0.1/api/generate', 500, 'busy', None, io.BytesIO())
+        with patch('time.sleep') as slept, \
+                patch('urllib.request.urlopen', side_effect=[server, ok]):
+            self.assertEqual(pipeline.generate('text', self.settings, 'summarize'), 'ok')
+        self.assertTrue(slept.called)
 
     def test_jobs_list_and_prefix_lookup(self):
         store = JobStore(self.settings.path('JOBS_DIR'))
@@ -414,6 +468,56 @@ class DoctorAndJobsTests(Workspace):
         with patch.dict(os.environ, {'PERSONAL_TOOLKIT_HOME': str(self.root)}):
             self.assertEqual(main(['jobs', '-n', '5']), 0)
             self.assertEqual(main(['job', 'c' * 8]), 0)
+            self.assertEqual(main(['job', '--json', 'c' * 8]), 0)
+
+    def test_interrupt_retry_and_corrupt_recovery(self):
+        store = JobStore(self.root / 'jobs')
+        stopped = store.create('source')
+        def stop(source, folder, settings, progress):
+            (folder / 'transcript.txt').write_text('[00:00:01] Hallo\n')
+            progress('summarizing')
+            raise KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            store.execute(stopped['id'], self.settings, runner=stop)
+        saved = store.get(stopped['id'])
+        self.assertEqual(saved['status'], 'failed')
+        self.assertIn('Ctrl-C', saved['error'])
+        self.assertIsNone(saved.get('pid'))
+        with patch.object(pipeline, 'generate', return_value='- Hallo [00:00:01]'):
+            result = store.retry(stopped['id'], self.settings)
+        self.assertEqual(result['status'], 'succeeded')
+        self.assertTrue((store.folder(stopped['id']) / 'summary.md').exists())
+        live = store.create('live')
+        dead = store.create('dead')
+        store.update(live['id'], status='running', pid=os.getpid())
+        store.update(dead['id'], status='running')
+        store.recover(owner='local', stale=True)
+        self.assertEqual(store.get(live['id'])['status'], 'running')
+        self.assertEqual(store.get(dead['id'])['status'], 'failed')
+        done = store.create('done')
+        store.update(done['id'], status='succeeded', result={'summary': 'x'})
+        with self.assertRaises(ValueError):
+            store.retry(done['id'], self.settings)
+        with self.assertRaises(ValueError):
+            store.retry(live['id'], self.settings)
+        corrupt = store.directory / ('d' * 32)
+        corrupt.mkdir()
+        (corrupt / 'job.json').write_text('{')
+        queued = store.create('queued')
+        store.recover()
+        self.assertEqual(store.get(queued['id'])['status'], 'failed')
+        self.assertTrue((corrupt / 'job.json').exists())
+        from io import StringIO
+        settings_store = JobStore(self.settings.path('JOBS_DIR'))
+        job = settings_store.create(str(self.root / 'missing.wav'))
+        (settings_store.folder(job['id']) / 'transcript.txt').write_text('[00:00:01] Hallo\n')
+        settings_store.update(job['id'], status='failed', stage='summarizing', error='Ollama unavailable')
+        with patch.dict(os.environ, {'PERSONAL_TOOLKIT_HOME': str(self.root)}), \
+                patch.object(pipeline, 'generate', return_value='- Hallo [00:00:01]'), \
+                patch('sys.stdout', StringIO()) as out:
+            self.assertEqual(main(['retry', job['id'][:8]]), 0)
+            self.assertIn('reusing-transcript', out.getvalue())
+        self.assertEqual(settings_store.get(job['id'])['status'], 'succeeded')
 
     def test_doctor_tolerates_malformed_model_lists(self):
         from personal_toolkit.__main__ import doctor, model_installed

@@ -1,4 +1,4 @@
-Personal Toolkit 1.0.3 — macOS
+Personal Toolkit 1.0.4 — macOS
 
 1. Homebrew moet aanwezig zijn (https://brew.sh).
 2. Open PersonalToolkit-Installer en bevestig de installatie.
@@ -6,6 +6,7 @@ Personal Toolkit 1.0.3 — macOS
 4. In datzelfde venster werkt `pt` al. Andere vensters: nieuw Terminal-venster, of de `export PATH=…`-regel die de installer toont.
 5. Controle: pt doctor
 6. Test: pt pipeline "/pad/naar/korte-opname.wav"
+7. Bij onderbreking: pt jobs en daarna pt retry <id>
 
 Bestaande instellingen, modellen en gebruikersbestanden blijven behouden.
 Docker, Penpot, n8n, Plausible en Fooocus zijn optioneel.
