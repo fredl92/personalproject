@@ -21,7 +21,7 @@ pt job JOB_ID
 pt services down automation
 ```
 
-De Docker-Ollama heeft een andere modelopslag dan de native Ollama op je Mac. Verander je `OLLAMA_MODEL`, voer dan opnieuw `pt services up automation` uit om dat model op te halen. Docker gebruikt hier CPU, geen Apple Metal.
+De Docker-Ollama heeft een andere modelopslag dan de native Ollama op je Mac. Verander je `OLLAMA_MODEL`, voer dan opnieuw `pt services up automation` uit om dat model op te halen. Docker gebruikt hier CPU, geen Apple Metal. Whisper-gewichten van de worker staan in `data/whisper-cache/` op de host (`WHISPER_CACHE_DIR` in de container is `/cache`).
 
 Voor lastige YouTube-downloads kun je in `.env` `YTDLP_COOKIES_FROM_BROWSER=chrome` zetten (alleen een toegelaten browsernaam). De worker in Docker heeft geen toegang tot je macOS-browsers; gebruik cookies vooral bij de native CLI (`pt pipeline` / `pt download`).
 

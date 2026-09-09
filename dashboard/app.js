@@ -8,7 +8,7 @@ function safeUrl(value) {
   return url.href;
 }
 
-async function checkStatus(url, fetcher = fetch, timeout = 4000) {
+async function checkStatus(url, fetcher = fetch, timeout = 4000, options = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
@@ -18,15 +18,44 @@ async function checkStatus(url, fetcher = fetch, timeout = 4000) {
     if (response.type === "opaque" || response.type === "opaqueredirect" || response.status === 0) {
       return { state: "unknown", label: "Niet bevestigd", detail: "De browser kan het antwoord niet controleren. Probeer Openen." };
     }
+    if ([502, 503, 504].includes(response.status)) {
+      return { state: "unknown", label: "Niet bevestigd", detail: "De dienst is niet bereikbaar of start nog. Probeer Openen of de starthulp." };
+    }
     if (!response.ok) {
       return { state: "error", label: `HTTP ${response.status}`, detail: "De dienst antwoordt met een fout." };
     }
-    return { state: "online", label: "Bereikbaar", detail: "Een HTTP-antwoord is bevestigd; dit controleert niet alle functies van de app." };
+    const result = { state: "online", label: "Bereikbaar", detail: "Een HTTP-antwoord is bevestigd; dit controleert niet alle functies van de app." };
+    if (options.kind !== "ollama") return result;
+    try {
+      const body = typeof response.text === "function" ? await response.text() : "";
+      return inspectOllamaHealth(body, options.model, result);
+    } catch {
+      return result;
+    }
   } catch {
     return { state: "unknown", label: "Niet bevestigd", detail: "De dienst is niet bereikbaar, reageert te traag of de browser blokkeert de controle. Probeer Openen." };
   } finally {
     clearTimeout(timer);
   }
+}
+
+function inspectOllamaHealth(body, wanted, fallback) {
+  let payload;
+  try { payload = JSON.parse(body); } catch {
+    return { ...fallback, detail: "Ollama antwoordt; de modellijst kon niet worden gelezen." };
+  }
+  const names = [];
+  if (Array.isArray(payload?.models)) {
+    for (const item of payload.models) {
+      if (item && typeof item === "object") names.push(item.name || "", item.model || "");
+      else if (typeof item === "string") names.push(item);
+    }
+  }
+  if (!wanted) return fallback;
+  if (!names.includes(wanted)) {
+    return { state: "error", label: "Model ontbreekt", detail: `Ollama draait, maar ${wanted} is niet geïnstalleerd. Voer pt doctor uit.` };
+  }
+  return { state: "online", label: "Model klaar", detail: `${wanted} is geïnstalleerd. Dit test geen antwoordkwaliteit.` };
 }
 
 const TASKS = {
@@ -146,7 +175,7 @@ function configureInput() {
 
 function selectTask(task, focus = true) {
   selectedTask = task;
-  for (const button of document.querySelectorAll("[data-task]")) button.setAttribute("aria-pressed", String(button.dataset.task === task));
+  for (const button of document.querySelectorAll("[data-task]")) button.setAttribute("aria-checked", String(button.dataset.task === task));
   document.getElementById("task-heading").textContent = TASKS[task].title;
   document.getElementById("task-description").textContent = TASKS[task].description;
   document.getElementById("task-input").value = "";
@@ -156,11 +185,14 @@ function selectTask(task, focus = true) {
 
 function bindTasks() {
   const choices = document.getElementById("task-choices");
+  choices.setAttribute("role", "radiogroup");
+  choices.setAttribute("aria-label", "Kies je taak");
   for (const [key, task] of Object.entries(TASKS)) {
     const button = element("button", "task-choice");
     button.type = "button";
     button.dataset.task = key;
-    button.setAttribute("aria-pressed", String(key === selectedTask));
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(key === selectedTask));
     const icon = element("span", "task-icon", task.icon);
     icon.setAttribute("aria-hidden", "true");
     button.append(icon, element("span", "", task.short));
@@ -202,6 +234,7 @@ function bindTasks() {
 function statusElements(target, app, key) {
   target.dataset.healthUrl = safeUrl(app.healthUrl || app.url);
   target.dataset.key = key;
+  if (app.healthKind) target.dataset.healthKind = app.healthKind;
   const badge = element("span", "status checking", "Controleren…");
   badge.dataset.status = "";
   const detail = element("p", "status-detail", "");
@@ -210,6 +243,8 @@ function statusElements(target, app, key) {
 }
 
 function renderApps(cfg) {
+  const empty = document.getElementById("apps-empty");
+  if (empty) empty.remove();
   for (const key of ["n8n", "penpot", "plausible", "fooocus"]) {
     const app = cfg.apps[key];
     if (!app) continue;
@@ -273,11 +308,14 @@ async function refreshStatus() {
       badge.className = "status checking";
       badge.textContent = "Controleren…";
       detail.textContent = "";
-      const status = await checkStatus(target.dataset.healthUrl);
+      const status = await checkStatus(target.dataset.healthUrl, fetch, 4000, {
+        kind: target.dataset.healthKind,
+        model: currentConfig?.models?.ollama,
+      });
       badge.className = "status " + status.state;
       badge.textContent = status.label;
       badge.title = status.detail;
-      detail.textContent = status.state === "online" ? "De dienst antwoordt. Je kunt verder." : target.dataset.key === "ollama" ? "Controleer je AI via de hulpknop hieronder." : status.state === "error" ? "Er is een fout. Bekijk de starthulp." : "Probeer Openen of bekijk de starthulp.";
+      detail.textContent = status.state === "online" ? status.detail : target.dataset.key === "ollama" ? status.detail || "Controleer je AI via de hulpknop hieronder." : status.state === "error" ? "Er is een fout. Bekijk de starthulp of voer pt doctor uit." : "Probeer Openen of bekijk de starthulp.";
     }));
     document.getElementById("updated-at").textContent = "Gecontroleerd om " + new Date().toLocaleTimeString("nl-BE", { hour: "2-digit", minute: "2-digit" });
   } finally {
@@ -375,5 +413,5 @@ function init() {
   setInterval(() => { if (!document.hidden) refreshStatus(); }, 60000);
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote, describeModels };
+if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote, describeModels, inspectOllamaHealth };
 if (typeof document !== "undefined") init();

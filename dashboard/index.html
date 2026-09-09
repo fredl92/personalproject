@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark" />
   <title>Mijn toolkit</title>
   <link rel="stylesheet" href="style.css" />
@@ -25,7 +25,7 @@
 
     <div class="workspace">
       <section class="task-panel" aria-labelledby="task-heading">
-        <div id="task-choices" class="task-choices" role="group" aria-label="Kies je taak"></div>
+        <div id="task-choices" class="task-choices"></div>
         <form id="task-form" class="task-form" novalidate>
           <div class="section-kicker">Je volgende stap</div>
           <h2 id="task-heading">Samenvatting maken</h2>
@@ -41,7 +41,7 @@
             <p id="input-error" class="field-error" role="alert" hidden></p>
           </div>
           <label id="audio-field" class="checkbox-row" hidden><input id="audio-only" type="checkbox" /> Alleen het geluid downloaden</label>
-          <div class="form-actions"><button class="btn btn-primary" type="submit">Maak mijn commando <span aria-hidden="true">→</span></button><span class="field-help">⌘ + Enter maakt het commando. Uitvoeren doe je daarna in Terminal.</span></div>
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Maak mijn commando <span aria-hidden="true">→</span></button><span class="field-help"><span class="kbd-hint">⌘ + Enter maakt het commando. </span><span class="touch-hint">Tik op de knop. </span>Uitvoeren doe je daarna in Terminal.</span></div>
           <section id="task-result" class="task-result" aria-labelledby="result-heading" aria-live="polite" hidden>
             <h3 id="result-heading" tabindex="-1">Klaar om uit te voeren</h3>
             <p>Kopieer dit commando, plak het in Terminal en druk op Enter.</p>
@@ -60,8 +60,8 @@
 
     <section id="apps" class="apps-section" aria-labelledby="apps-heading">
       <div class="section-heading"><div><h2 id="apps-heading">Je apps</h2><p class="muted">Open een app, of bekijk hoe je die start.</p></div><div class="refresh-controls"><button id="refresh-btn" class="btn btn-secondary" type="button">Controleer apps</button><span id="updated-at" class="field-help" aria-live="polite"></span></div></div>
-      <div id="app-grid" class="app-grid"></div>
-      <p class="status-note">“Niet bevestigd” betekent niet altijd dat een app uit staat. Je browser kan de controle blokkeren. Gebruik dan Openen of Hulp bij starten.</p>
+      <div id="app-grid" class="app-grid"><p id="apps-empty" class="empty-apps">App-kaarten verschijnen hier na een geldige dashboardconfiguratie. Je kunt hierboven al een commando maken.</p></div>
+      <p class="status-note">Status loopt via het dashboard (localhost), niet via cross-origin. “Bereikbaar” of “Model klaar” is geen volledige gezondheidscheck. “Niet bevestigd” betekent dat de app uit staat, nog start, of dat de controle is geblokkeerd. Gebruik dan Openen, de starthulp of <code>pt doctor</code>.</p>
       <details class="extra-apps"><summary>Meer mogelijkheden <span>Beelden maken en bezoekersstatistieken</span></summary><div id="extra-grid" class="app-grid"></div></details>
     </section>
 

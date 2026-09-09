@@ -2,12 +2,35 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { execFileSync } = require('node:child_process');
-const { checkStatus, safeUrl, CLI_COMMANDS, createCommand, describeModels } = require('../dashboard/app.js');
+const { checkStatus, safeUrl, CLI_COMMANDS, createCommand, describeModels, inspectOllamaHealth } = require('../dashboard/app.js');
 
 test('HTTP success is reachable, without claiming app health', async () => {
   const result = await checkStatus('http://localhost:5678/healthz', async () => ({ status: 200, ok: true, type: 'cors' }));
   assert.equal(result.state, 'online');
   assert.equal(result.label, 'Bereikbaar');
+});
+
+test('gateway errors from a proxy stay unconfirmed instead of pretending the app answered', async () => {
+  for (const status of [502, 503, 504]) {
+    const result = await checkStatus('http://localhost:8080/health/n8n', async () => ({ status, ok: false, type: 'cors' }));
+    assert.equal(result.state, 'unknown');
+    assert.equal(result.label, 'Niet bevestigd');
+  }
+});
+
+test('Ollama tags confirm the configured model without claiming quality', async () => {
+  const fallback = { state: 'online', label: 'Bereikbaar', detail: 'HTTP' };
+  const missing = inspectOllamaHealth(JSON.stringify({ models: [{ name: 'other:latest' }] }), 'llama3.2:3b', fallback);
+  assert.equal(missing.state, 'error');
+  assert.equal(missing.label, 'Model ontbreekt');
+  const ready = inspectOllamaHealth(JSON.stringify({ models: [{ name: 'llama3.2:3b' }] }), 'llama3.2:3b', fallback);
+  assert.equal(ready.state, 'online');
+  assert.equal(ready.label, 'Model klaar');
+  const result = await checkStatus('http://localhost:8080/health/ollama', async () => ({
+    status: 200, ok: true, type: 'cors',
+    text: async () => JSON.stringify({ models: [{ name: 'llama3.2:3b' }] }),
+  }), 4000, { kind: 'ollama', model: 'llama3.2:3b' });
+  assert.equal(result.label, 'Model klaar');
 });
 
 test('real HTTP 500 is never online', async () => {

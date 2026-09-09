@@ -25,7 +25,10 @@ for attempt in {1..30}; do
 done
 if [[ "$READY" != 1 ]]; then echo "Ollama did not become ready. Check brew services info ollama." >&2; exit 1; fi
 OLLAMA_HOST=127.0.0.1:11434 ollama pull "$(bash "${ROOT}/bin/pt" model)"
+export PATH="${ROOT}/bin:${PATH}"
 bash "${ROOT}/scripts/register-path.sh" "$ROOT"
 bash "${ROOT}/bin/pt" doctor
-echo "Core ready. Open a new Terminal window to use pt."
+echo "Core ready. This Terminal can already use pt."
+echo "Open a new Terminal window for other sessions. If pt is still unknown, run:"
+printf '  export PATH=%q:"$PATH"\n' "${ROOT}/bin"
 echo "Optional modules: pt services up automation / pt services up design"
