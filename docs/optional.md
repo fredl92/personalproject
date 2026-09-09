@@ -1,6 +1,6 @@
 # Optionele modules: Plausible en Fooocus
 
-Deze modules horen niet bij de lokale kern (`pt pipeline`, `pt doctor`). Ze vragen extra downloads en, voor Plausible, Docker. CI gebruikt geen echte accounts, API-tokens of websites.
+Deze modules horen niet bij de lokale kern (`pt pipeline`, `pt doctor`). Ze starten **niet** automatisch: `make plausible` / `make fooocus` bereidt alleen voor. Laat ze uit staan tot je ze nodig hebt; na een test stop je ze weer. Ze vragen extra downloads en, voor Plausible, Docker. CI gebruikt geen echte accounts, API-tokens of websites. Open ze niet via het dashboard als de container niet draait — verwacht dan “Niet bevestigd”.
 
 ## Plausible (websitebezoek)
 

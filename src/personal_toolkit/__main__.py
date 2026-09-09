@@ -13,8 +13,8 @@ from pathlib import Path
 
 from .config import Settings, atomic_write, initialize
 from .dashboard import configuration, render as render_dashboard
-from .jobs import JobStore
-from .pipeline import download, generate, summarize, transcribe, whisper_runtime
+from .jobs import JobStore, artifacts
+from .pipeline import download, generate, resolve_media_source, summarize, transcribe, whisper_runtime
 
 
 def compose(settings, arguments):
@@ -91,14 +91,32 @@ def doctor(settings):
         checks.append(("Ollama reachable", False,
                        "Ollama did not return a valid model list. Start it and run pt doctor again."))
     notes.append(docker_note())
+    jobs = JobStore(settings.path("JOBS_DIR"))
+    interrupted = jobs.recover(owner="local", stale=True)
+    if interrupted:
+        notes.append("Marked " + str(len(interrupted)) +
+                     " interrupted local job(s) as failed. Resume with: pt retry " + interrupted[0]["id"][:8])
     for name, passed, hint in checks:
         print(("OK   " if passed else "FAIL ") + name)
         if not passed and hint:
             print("      " + hint)
     for note in notes:
         print("NOTE " + note)
-    print("Recent jobs: pt jobs")
+    print("Recent jobs: pt jobs    Resume a failed job: pt retry <id>")
     return 0 if all(passed for _, passed, _ in checks) else 1
+
+
+def local_jobs(settings):
+    store = JobStore(settings.path("JOBS_DIR"))
+    store.recover(owner="local", stale=True)
+    return store
+
+
+def short_time(value):
+    text = str(value or "")
+    if not text:
+        return "—"
+    return text.replace("T", " ")[:16] + "Z"
 
 
 def print_jobs(jobs):
@@ -106,14 +124,36 @@ def print_jobs(jobs):
         print("No jobs yet. Run: pt pipeline <url-or-file>")
         return
     for job in jobs:
+        job_id = str(job.get("id") or "")
         source = str(job.get("source") or "")
-        if len(source) > 80:
-            source = source[:77] + "..."
-        print(f"{job.get('id', '')[:8]}  {str(job.get('status') or '?'):<10}  {source}")
+        if len(source) > 64:
+            source = source[:61] + "..."
+        stage = str(job.get("stage") or "—")
+        print(f"{job_id[:8]}  {str(job.get('status') or '?'):<10}  {stage:<18}  {short_time(job.get('updated_at'))}  {source}")
         if job.get("status") == "failed" and job.get("error"):
             print("           " + str(job["error"]).splitlines()[0][:120])
+            print("           Resume: pt retry " + job_id[:8])
         elif job.get("status") == "succeeded" and isinstance(job.get("result"), dict) and job["result"].get("summary"):
             print("           " + str(job["result"]["summary"]))
+
+
+def print_job(job, folder):
+    job_id = str(job.get("id") or "")
+    print("Job      " + job_id)
+    print("Status   " + str(job.get("status") or "?"))
+    print("Stage    " + str(job.get("stage") or "—"))
+    print("Updated  " + str(job.get("updated_at") or "—"))
+    print("Source   " + str(job.get("source") or "—"))
+    if job.get("error"):
+        print("Error    " + str(job["error"]).splitlines()[0][:400])
+    print("Folder   " + str(folder))
+    present = artifacts(folder)
+    for name in ("transcript.txt", "transcript.json", "summary.md", "media"):
+        print(f"  {name:<18} {'yes' if present.get(name) else 'no'}")
+    if job.get("status") == "succeeded" and isinstance(job.get("result"), dict) and job["result"].get("summary"):
+        print("Summary  " + str(job["result"]["summary"]))
+    elif job.get("status") != "running":
+        print("Resume   pt retry " + job_id[:8])
 
 
 def main(argv=None):
@@ -129,9 +169,9 @@ def main(argv=None):
     dl.add_argument("url")
     dl.add_argument("--audio", action="store_true")
     tx = sub.add_parser("transcribe")
-    tx.add_argument("file", type=Path)
+    tx.add_argument("file", help="Local media file or file:// URL")
     pipe = sub.add_parser("pipeline")
-    pipe.add_argument("source", help="Video URL or local media file")
+    pipe.add_argument("source", help="Video URL, local media file, or file:// URL")
     ask = sub.add_parser("ask")
     ask.add_argument("prompt")
     ask.add_argument("model", nargs="?")
@@ -139,8 +179,11 @@ def main(argv=None):
     summ.add_argument("transcript", type=Path)
     listing = sub.add_parser("jobs", help="List recent download/transcript jobs")
     listing.add_argument("-n", "--limit", type=int, default=20)
-    status = sub.add_parser("job")
+    status = sub.add_parser("job", help="Show one job; accepts an ID prefix")
     status.add_argument("id")
+    status.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    retry = sub.add_parser("retry", help="Resume a failed job from saved transcript or media")
+    retry.add_argument("id")
     svc = sub.add_parser("services")
     svc.add_argument("action", choices=("up", "down", "logs", "status"), default="status", nargs="?")
     svc.add_argument("module", choices=("dashboard", "automation", "design"), nargs="?")
@@ -180,7 +223,7 @@ def main(argv=None):
         elif args.command == "download":
             print(download(args.url, settings.path("DOWNLOAD_DIR"), audio=args.audio, settings=settings))
         elif args.command == "transcribe":
-            source = args.file.expanduser()
+            source = resolve_media_source(args.file)
             target = settings.path("TRANSCRIPTS_DIR") / (source.stem + "-" + uuid.uuid4().hex[:8] + ".txt")
             transcribe(source, target, settings)
             print(target)
@@ -196,7 +239,7 @@ def main(argv=None):
             print(generate(args.prompt, settings, "Beantwoord deze vraag in het Nederlands.",
                            system="Je bent een behulpzame assistent. Benoem onzekerheid en verzin geen feiten."))
         elif args.command == "pipeline":
-            jobs = JobStore(settings.path("JOBS_DIR"))
+            jobs = local_jobs(settings)
             job = jobs.create(args.source)
             print("Job: " + job["id"], flush=True)
             result = jobs.execute(job["id"], settings, report=lambda stage: print(stage + "...", flush=True))
@@ -205,9 +248,23 @@ def main(argv=None):
             print(result["result"]["summary_text"])
             print("Saved: " + str(jobs.folder(job["id"])))
         elif args.command == "jobs":
-            print_jobs(JobStore(settings.path("JOBS_DIR")).list(args.limit))
+            print_jobs(local_jobs(settings).list(args.limit))
         elif args.command == "job":
-            print(json.dumps(JobStore(settings.path("JOBS_DIR")).get(args.id), ensure_ascii=False, indent=2))
+            store = local_jobs(settings)
+            job = store.get(args.id)
+            if args.json:
+                print(json.dumps(job, ensure_ascii=False, indent=2))
+            else:
+                print_job(job, store.folder(job["id"]))
+        elif args.command == "retry":
+            jobs = local_jobs(settings)
+            job = jobs.get(args.id)
+            print("Retry: " + job["id"], flush=True)
+            result = jobs.retry(job["id"], settings, report=lambda stage: print(stage + "...", flush=True))
+            if result["status"] == "failed":
+                raise RuntimeError(result["error"])
+            print(result["result"]["summary_text"])
+            print("Saved: " + str(jobs.folder(job["id"])))
         elif args.command == "services":
             settings.validate()
             if args.action == "up" and not args.module:

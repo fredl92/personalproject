@@ -8,7 +8,7 @@
 
 De workflow gebruikt HTTP, geen Execute Command-node. De worker heeft yt-dlp, ffmpeg en faster-whisper geïnstalleerd en schrijft naar `data/jobs/`. n8n hoeft geen hostcommando's uit te voeren en krijgt geen toegang tot de modellen of opnamemappen.
 
-Status wordt elke tien seconden opgehaald. Bij succes toont **Result** de samenvatting en de uitvoermap. Bij een mislukte download, transcriptie of modelaanroep toont **Report failure** de fout. Een herstart markeert onafgewerkte taken als onderbroken; bestaande bestanden blijven bewaard. Dien de taak opnieuw in of gebruik het bewaarde transcript met `pt summarize`.
+Status wordt elke tien seconden opgehaald. Bij succes toont **Result** de samenvatting en de uitvoermap. Bij een mislukte download, transcriptie of modelaanroep toont **Report failure** de fout. Een herstart van de worker markeert onafgewerkte worker-taken als onderbroken; bestaande bestanden blijven bewaard. Dien de taak opnieuw in via n8n, of hervat een native taak met `pt retry JOB_ID` (gebruikt een bewaard transcript of gedownloade audio). `pt summarize` blijft beschikbaar voor losse transcriptbestanden.
 
 De workflow stopt na vier uur; uitzonderlijk lange verwerkingen kunnen dan nog verder lopen in de worker. Hun status en uitvoer blijven in `data/jobs/<id>/job.json` staan. Stoppen van een module verwijdert geen taken of volumes.
 
@@ -18,6 +18,7 @@ De workflow stopt na vier uur; uitzonderlijk lange verwerkingen kunnen dan nog v
 pt services status automation
 pt services logs automation
 pt job JOB_ID
+pt retry JOB_ID
 pt services down automation
 ```
 
