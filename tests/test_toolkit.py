@@ -215,13 +215,22 @@ class PipelineTests(Workspace):
         media.mkdir(parents=True)
         (media / 'clip.m4a.part').write_bytes(b'x' * 5000)
         (media / 'tiny.m4a').write_bytes(b'\x00' * 40)
-        (media / 'corrupt.m4a').write_bytes(b'not a media file' * 80)
+        self.assertEqual(pipeline.media_candidates(job), [])
         self.assertIsNone(pipeline.existing_media(job))
+        junk = media / 'corrupt.m4a'
+        junk.write_bytes(b'not a media file' * 80)
+        self.assertEqual([path.name for path in pipeline.media_candidates(job)], ['corrupt.m4a'])
+        with patch.object(pipeline, 'probe_media', return_value=False):
+            self.assertIsNone(pipeline.existing_media(job))
         audio = write_silence_wav(media / 'good.wav')
         leftover_video = media / 'source.mp4'
-        leftover_video.write_bytes(audio.read_bytes() + b'\x00' * 8000)
-        chosen = pipeline.existing_media(job)
-        self.assertEqual(chosen, audio)
+        leftover_video.write_bytes(b'\x00' * 20000)
+
+        def readable(path):
+            return Path(path).suffix.lower() == '.wav'
+
+        with patch.object(pipeline, 'probe_media', side_effect=readable):
+            self.assertEqual(pipeline.existing_media(job), audio)
         pipeline.clear_partial_downloads(job)
         self.assertFalse((media / 'clip.m4a.part').exists())
         downloaded = self.root / 'fresh.wav'
@@ -235,6 +244,23 @@ class PipelineTests(Workspace):
             pipeline.run_pipeline('https://example.org/video', job, self.settings, stages.append)
         download.assert_called()
         self.assertEqual(stages[0], 'downloading')
+
+    def test_probe_media_requires_size_and_uses_ffmpeg_when_present(self):
+        missing = self.root / 'missing.wav'
+        self.assertFalse(pipeline.probe_media(missing))
+        tiny = self.root / 'tiny.wav'
+        tiny.write_bytes(b'\x00' * 10)
+        self.assertFalse(pipeline.probe_media(tiny))
+        junk = self.root / 'junk.m4a'
+        junk.write_bytes(b'not a media file' * 80)
+        wav = write_silence_wav(self.root / 'ok.wav')
+        with patch.object(pipeline.shutil, 'which', return_value=None):
+            self.assertTrue(pipeline.probe_media(junk))
+            self.assertTrue(pipeline.probe_media(wav))
+        if shutil.which('ffmpeg') is None:
+            return
+        self.assertFalse(pipeline.probe_media(junk))
+        self.assertTrue(pipeline.probe_media(wav))
 
     def test_heartbeat_emits_elapsed_notes(self):
         from io import StringIO
