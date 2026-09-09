@@ -707,7 +707,10 @@ class DoctorAndJobsTests(Workspace):
         second = str(self.root / 'new toolkit')
         subprocess.run(['bash', script, first], check=True, env=env)
         subprocess.run(['bash', script, second], check=True, env=env)
-        text = (home / '.bashrc').read_text()
+        written = [path for path in (home / '.bashrc', home / '.bash_profile', home / '.profile')
+                   if path.exists() and 'Personal Toolkit PATH' in path.read_text()]
+        self.assertEqual(len(written), 1)
+        text = written[0].read_text()
         self.assertEqual(text.count('Personal Toolkit PATH'), 1)
         line = next(row for row in text.splitlines() if row.startswith('export PATH='))
         expanded = subprocess.run(['bash', '-c', line + '\nprintf %s "$PATH"'],
