@@ -13,6 +13,7 @@ DEFAULTS = {
     "N8N_VERSION": "2.37.7", "PENPOT_VERSION": "2.17.2", "PENPOT_MCP_VERSION": "2.17.0", "OLLAMA_VERSION": "0.33.2",
     "N8N_PORT": "5678", "PENPOT_PORT": "9001", "OLLAMA_MODEL": "llama3.2:3b",
     "OLLAMA_URL": "http://127.0.0.1:11434", "WHISPER_MODEL": "base",
+    "WHISPER_LANGUAGE": "nl", "YTDLP_COOKIES_FROM_BROWSER": "",
     "WHISPER_DEVICE": "cpu", "WHISPER_COMPUTE_TYPE": "int8",
     "DOWNLOAD_DIR": "./downloads", "TRANSCRIPTS_DIR": "./transcripts",
     "JOBS_DIR": "./data/jobs", "WHISPER_CACHE_DIR": "./data/whisper-cache", "TZ": "Europe/Brussels",

@@ -11,6 +11,7 @@ fi
 if [[ ! -d "${ROOT}/.venv" ]]; then python3 -m venv "${ROOT}/.venv"; fi
 "${ROOT}/.venv/bin/python" -m pip install -r "${ROOT}/requirements.txt"
 bash "${ROOT}/bin/pt" init
+bash "${ROOT}/scripts/register-path.sh" "$ROOT"
 if command -v ollama >/dev/null; then
   OLLAMA_HOST=127.0.0.1:11434 ollama pull "$(bash "${ROOT}/bin/pt" model)"
 else

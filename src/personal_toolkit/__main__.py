@@ -22,21 +22,56 @@ def compose(settings, arguments):
                    cwd=settings.root, env=env, check=True)
 
 
+def model_installed(models, wanted):
+    names = []
+    if isinstance(models, list):
+        for item in models:
+            if isinstance(item, dict):
+                names.extend([item.get("name") or "", item.get("model") or ""])
+            elif isinstance(item, str):
+                names.append(item)
+    wanted = (wanted or "").strip()
+    return bool(wanted) and any(name == wanted for name in names)
+
+
 def doctor(settings):
-    checks = {"Python >= 3.10": sys.version_info >= (3, 10),
-              "yt-dlp": shutil.which("yt-dlp") is not None,
-              "ffmpeg": shutil.which("ffmpeg") is not None,
-              "faster-whisper": importlib.util.find_spec("faster_whisper") is not None}
+    checks = [("Python >= 3.10", sys.version_info >= (3, 10), "Install Python 3.10 or newer."),
+              ("yt-dlp", shutil.which("yt-dlp") is not None, "Run make setup to install Python packages."),
+              ("ffmpeg", shutil.which("ffmpeg") is not None, "Install ffmpeg (brew or apt), then rerun make setup."),
+              ("faster-whisper", importlib.util.find_spec("faster_whisper") is not None,
+               "Run make setup to install Python packages.")]
     try:
         with urllib.request.urlopen(settings.get("OLLAMA_URL").rstrip("/") + "/api/tags", timeout=5) as response:
-            models = json.load(response).get("models", [])
-        checks["Ollama model " + settings.get("OLLAMA_MODEL")] = any(m["name"] == settings.get("OLLAMA_MODEL") for m in models)
+            payload = json.load(response)
+        models = payload.get("models", []) if isinstance(payload, dict) else []
+        wanted = settings.get("OLLAMA_MODEL")
+        checks.append(("Ollama reachable", True, ""))
+        checks.append(("Ollama model " + wanted, model_installed(models, wanted),
+                       "Start Ollama and run: ollama pull " + wanted))
     except Exception:
-        checks["Ollama reachable"] = False
-    for name, passed in checks.items():
+        checks.append(("Ollama reachable", False, "Start Ollama (brew services start ollama) and run pt doctor again."))
+    for name, passed, hint in checks:
         print(("OK   " if passed else "FAIL ") + name)
+        if not passed and hint:
+            print("      " + hint)
     print("Docker and Node.js are optional: needed only for automation/design.")
-    return 0 if all(checks.values()) else 1
+    print("Recent jobs: pt jobs")
+    return 0 if all(passed for _, passed, _ in checks) else 1
+
+
+def print_jobs(jobs):
+    if not jobs:
+        print("No jobs yet. Run: pt pipeline <url-or-file>")
+        return
+    for job in jobs:
+        source = str(job.get("source") or "")
+        if len(source) > 80:
+            source = source[:77] + "..."
+        print(f"{job.get('id', '')[:8]}  {str(job.get('status') or '?'):<10}  {source}")
+        if job.get("status") == "failed" and job.get("error"):
+            print("           " + str(job["error"]).splitlines()[0][:120])
+        elif job.get("status") == "succeeded" and isinstance(job.get("result"), dict) and job["result"].get("summary"):
+            print("           " + str(job["result"]["summary"]))
 
 
 def main(argv=None):
@@ -60,6 +95,8 @@ def main(argv=None):
     ask.add_argument("model", nargs="?")
     summ = sub.add_parser("summarize")
     summ.add_argument("transcript", type=Path)
+    listing = sub.add_parser("jobs", help="List recent download/transcript jobs")
+    listing.add_argument("-n", "--limit", type=int, default=20)
     status = sub.add_parser("job")
     status.add_argument("id")
     svc = sub.add_parser("services")
@@ -99,14 +136,16 @@ def main(argv=None):
                 if not webbrowser.open(url):
                     print("Open the URL above in your browser.")
         elif args.command == "download":
-            print(download(args.url, settings.path("DOWNLOAD_DIR"), audio=args.audio))
+            print(download(args.url, settings.path("DOWNLOAD_DIR"), audio=args.audio, settings=settings))
         elif args.command == "transcribe":
-            target = settings.path("TRANSCRIPTS_DIR") / (args.file.stem + "-" + uuid.uuid4().hex[:8] + ".txt")
-            transcribe(args.file, target, settings)
+            source = args.file.expanduser()
+            target = settings.path("TRANSCRIPTS_DIR") / (source.stem + "-" + uuid.uuid4().hex[:8] + ".txt")
+            transcribe(source, target, settings)
             print(target)
         elif args.command == "summarize":
-            result = summarize(args.transcript.read_text(encoding="utf-8"), settings)
-            target = args.transcript.with_name(args.transcript.stem + "-summary.md")
+            transcript = args.transcript.expanduser()
+            result = summarize(transcript.read_text(encoding="utf-8"), settings)
+            target = transcript.with_name(transcript.stem + "-summary.md")
             atomic_write(target, result + "\n")
             print(result + "\n\nSaved: " + str(target))
         elif args.command == "ask":
@@ -118,11 +157,13 @@ def main(argv=None):
             jobs = JobStore(settings.path("JOBS_DIR"))
             job = jobs.create(args.source)
             print("Job: " + job["id"], flush=True)
-            result = jobs.execute(job["id"], settings)
+            result = jobs.execute(job["id"], settings, report=lambda stage: print(stage + "...", flush=True))
             if result["status"] == "failed":
                 raise RuntimeError(result["error"])
             print(result["result"]["summary_text"])
             print("Saved: " + str(jobs.folder(job["id"])))
+        elif args.command == "jobs":
+            print_jobs(JobStore(settings.path("JOBS_DIR")).list(args.limit))
         elif args.command == "job":
             print(json.dumps(JobStore(settings.path("JOBS_DIR")).get(args.id), ensure_ascii=False, indent=2))
         elif args.command == "services":

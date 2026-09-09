@@ -16,7 +16,7 @@ code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap
 kbd { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:.1rem .3rem; font-size:.875rem; }
 .skip-link { position:fixed; left:1rem; top:-5rem; z-index:20; padding:1rem; background:var(--panel); }
 .skip-link:focus { top:1rem; }
-.header { background:rgba(12,16,25,.96); border-bottom:1px solid var(--border); }
+.header { position:sticky; top:0; z-index:10; background:rgba(12,16,25,.96); border-bottom:1px solid var(--border); }
 .header-inner { max-width:1200px; padding:1.1rem 2rem; margin:auto; display:flex; align-items:center; gap:2rem; }
 .brand { display:flex; align-items:center; gap:.65rem; color:var(--text); font-size:1.1rem; font-weight:700; text-decoration:none; }
 .logo { display:grid; place-items:center; background:var(--primary); color:var(--ink); width:34px; height:34px; border-radius:10px; }

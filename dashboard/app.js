@@ -51,6 +51,7 @@ const CLI_COMMANDS = [
   { label: "Automatisering starten", cmd: "pt services up automation" },
   { label: "Ontwerpen starten", cmd: "pt services up design" },
   { label: "Installatie controleren", cmd: "pt doctor" },
+  { label: "Recente taken tonen", cmd: "pt jobs" },
   { label: "Alle adressen tonen", cmd: "pt urls" },
 ];
 
@@ -73,6 +74,19 @@ function mediaPath(value) {
   }
   if (value === "/" || value === "~/") throw new Error("Kies een bestand, niet alleen je thuismap.");
   return value.startsWith("~/") ? '"$HOME"/' + shellQuote(value.slice(2)) : shellQuote(value);
+}
+
+function describeModels(cfg) {
+  const models = cfg?.models || {};
+  const ollama = typeof models.ollama === "string" && models.ollama ? models.ollama : "het taalmodel";
+  const whisper = typeof models.whisper === "string" ? models.whisper : "";
+  const lang = typeof models.whisperLanguage === "string" ? models.whisperLanguage : "";
+  let text = `Ollama voert ${ollama} uit. Het antwoord verschijnt in Terminal.`;
+  if (whisper) {
+    text += ` Uitschrijven gebruikt Whisper ${whisper}`;
+    text += lang && lang !== "auto" ? ` (${lang}).` : ".";
+  }
+  return text;
 }
 
 function createCommand(task, input, { source = "url", audio = false } = {}) {
@@ -157,6 +171,12 @@ function bindTasks() {
   document.getElementById("source-kind").addEventListener("change", configureInput);
   document.getElementById("audio-only").addEventListener("change", invalidateResult);
   document.getElementById("task-input").addEventListener("input", invalidateResult);
+  document.getElementById("task-input").addEventListener("keydown", event => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      document.getElementById("task-form").requestSubmit();
+    }
+  });
   document.getElementById("task-form").addEventListener("submit", event => {
     event.preventDefault();
     invalidateResult();
@@ -312,17 +332,22 @@ function manualCopy(value) {
 }
 
 function bindActions() {
-  document.getElementById("close-help").addEventListener("click", () => document.getElementById("help-dialog").close());
+  const dialog = document.getElementById("help-dialog");
+  document.getElementById("close-help").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close(); });
   document.body.addEventListener("click", async event => {
     const help = event.target.closest("[data-help]");
     if (help) { showHelp(help.dataset.help); return; }
     const button = event.target.closest("[data-copy]");
     if (!button) return;
     const value = button.dataset.copy;
+    const original = button.textContent;
     button.disabled = true;
     try {
       await navigator.clipboard.writeText(value);
+      button.textContent = "Gekopieerd";
       showToast("Gekopieerd. Plak in Terminal en druk op Enter.");
+      setTimeout(() => { if (button.textContent === "Gekopieerd") button.textContent = original; }, 2000);
     } catch { manualCopy(value); }
     finally { button.disabled = false; }
   });
@@ -338,6 +363,7 @@ function init() {
     for (const app of Object.values(cfg.apps)) { safeUrl(app.url); if (app.healthUrl) safeUrl(app.healthUrl); }
     currentConfig = cfg;
     renderApps(cfg);
+    document.getElementById("ai-model").textContent = describeModels(cfg);
   } catch {
     document.getElementById("config-error").hidden = false;
     document.getElementById("refresh-btn").disabled = true;
@@ -349,5 +375,5 @@ function init() {
   setInterval(() => { if (!document.hidden) refreshStatus(); }, 60000);
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote };
+if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote, describeModels };
 if (typeof document !== "undefined") init();

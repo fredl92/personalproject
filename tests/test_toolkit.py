@@ -95,6 +95,7 @@ class PipelineTests(Workspace):
                 pass
             def transcribe(self, source, **kwargs):
                 captured['source'] = source
+                captured['kwargs'] = kwargs
                 return iter(segments), types.SimpleNamespace(language='nl')
         return types.SimpleNamespace(WhisperModel=WhisperModel), captured
 
@@ -131,16 +132,21 @@ class PipelineTests(Workspace):
         self.assertEqual(len(seen), 4)
         self.assertTrue(all(len(text) <= 10000 for text, _ in seen))
         self.assertTrue(all('Nederlandse' in instruction for _, instruction in seen))
+        self.assertTrue(any('Kernpunten' in instruction for _, instruction in seen))
         self.assertIn('[00:00:12]', result)
 
     def test_download_passes_url_as_single_argument(self):
         media = self.root / 'media file.wav'; media.touch()
-        with patch('subprocess.run', return_value=types.SimpleNamespace(stdout=str(media)+'\n')) as run:
+        with patch('subprocess.run', return_value=types.SimpleNamespace(stdout=str(media)+'\n', returncode=0, stderr='')) as run:
             pipeline.download('https://example.org/video?a=1&b=2', self.root)
         args = run.call_args.args[0]
         self.assertEqual(args[-2:], ['--', 'https://example.org/video?a=1&b=2'])
         self.assertNotIn('shell', run.call_args.kwargs)
         self.assertIn('--no-playlist', args)
+        self.assertIn('--retries', args)
+        self.assertIn('-x', args)
+        self.assertIn('m4a', args)
+        self.assertNotIn('--cookies-from-browser', args)
 
     def test_invalid_urls_rejected(self):
         for url in [None, 12, 'file:///etc/passwd', 'https://user:secret@example.org/', '--exec=touch foo']:
@@ -245,8 +251,8 @@ class WorkerTests(Workspace):
             self.assertEqual(error.exception.code,400)
 
     def test_async_submit_poll_results(self):
-        def execute(store,job_id,settings):
-            store.update(job_id,status='succeeded',result={'summary_text':'Samenvatting'})
+        def execute(store, job_id, settings, **_kwargs):
+            store.update(job_id, status='succeeded', result={'summary_text':'Samenvatting'})
         with patch.object(JobStore,'execute',execute):
             with self.request('/jobs',{'url':'https://example.org/video'}) as response:
                 self.assertEqual(response.status,202);job=json.load(response)
@@ -280,6 +286,7 @@ class InstallerTests(Workspace):
         p=subprocess.run([str(ROOT/'bin/pt'),'--help'],cwd=self.root,capture_output=True,text=True)
         self.assertEqual(p.returncode,0,p.stderr)
         self.assertIn('pipeline',p.stdout)
+        self.assertIn('jobs',p.stdout)
 
     def test_cursor_merge_preserves_other_servers(self):
         project=self.root/'Auraxis';config=project/'.cursor/mcp.json';config.parent.mkdir(parents=True)
@@ -296,6 +303,119 @@ class InstallerTests(Workspace):
         with patch.dict(os.environ,{'PERSONAL_TOOLKIT_HOME':str(self.root)}):
             self.assertEqual(main(['cursor-config',str(project)]),1)
         self.assertEqual(config.read_text(),original)
+
+
+class DoctorAndJobsTests(Workspace):
+    def test_whisper_defaults_to_dutch_and_supports_autodetect(self):
+        source = self.root / 'opname.wav'
+        source.touch()
+        fake, captured = PipelineTests.fake_whisper(self)
+        with patch.dict(sys.modules, {'faster_whisper': fake}):
+            pipeline.transcribe(source, self.root / 't.txt', self.settings)
+        self.assertEqual(captured['kwargs']['language'], 'nl')
+        self.settings.values['WHISPER_LANGUAGE'] = ''
+        with patch.dict(sys.modules, {'faster_whisper': fake}):
+            pipeline.transcribe(source, self.root / 't2.txt', self.settings)
+        self.assertNotIn('language', captured['kwargs'])
+        self.settings.values['WHISPER_LANGUAGE'] = 'nl;rm'
+        with self.assertRaises(ValueError):
+            pipeline.whisper_language(self.settings)
+
+    def test_download_error_uses_yt_dlp_message_and_rejects_cookie_injection(self):
+        with patch('subprocess.run', return_value=types.SimpleNamespace(
+                stdout='', returncode=1, stderr='WARNING: sleep\nERROR: Private video\n')):
+            with self.assertRaises(RuntimeError) as error:
+                pipeline.download('https://example.org/video', self.root)
+        self.assertIn('Private video', str(error.exception))
+        self.settings.values['YTDLP_COOKIES_FROM_BROWSER'] = 'chrome; rm -rf /'
+        with self.assertRaises(ValueError):
+            pipeline.download('https://example.org/video', self.root, settings=self.settings)
+        media = self.root / 'clip.m4a'
+        media.touch()
+        self.settings.values['YTDLP_COOKIES_FROM_BROWSER'] = 'safari'
+        with patch('subprocess.run', return_value=types.SimpleNamespace(
+                stdout=str(media) + '\n', returncode=0, stderr='')) as run:
+            pipeline.download('https://example.org/video', self.root, audio=False, settings=self.settings)
+        args = run.call_args.args[0]
+        self.assertEqual(args[args.index('--cookies-from-browser') + 1], 'safari')
+        self.assertNotIn('-x', args)
+
+    def test_missing_downloader_is_actionable(self):
+        with patch('subprocess.run', side_effect=FileNotFoundError('yt-dlp')):
+            with self.assertRaises(RuntimeError) as error:
+                pipeline.download('https://example.org/video', self.root)
+        self.assertIn('yt-dlp', str(error.exception))
+        self.assertIn('make setup', str(error.exception))
+
+    def test_download_cli_forwards_cookie_setting(self):
+        (self.root / '.env').write_text((self.root / '.env').read_text() + '\nYTDLP_COOKIES_FROM_BROWSER=firefox\n')
+        with patch.dict(os.environ, {'PERSONAL_TOOLKIT_HOME': str(self.root)}), \
+                patch('personal_toolkit.__main__.download', return_value=self.root / 'clip.m4a') as dl:
+            self.assertEqual(main(['download', 'https://example.org/video', '--audio']), 0)
+        self.assertEqual(dl.call_args.kwargs['audio'], True)
+        self.assertEqual(dl.call_args.kwargs['settings'].get('YTDLP_COOKIES_FROM_BROWSER'), 'firefox')
+
+    def test_ollama_retries_transient_errors_but_not_http_client_errors(self):
+        import io
+        ok = io.BytesIO(json.dumps({'response': 'ok', 'done': True}).encode())
+        with patch('time.sleep') as slept, \
+                patch('urllib.request.urlopen', side_effect=[urllib.error.URLError('temporary'), ok]):
+            self.assertEqual(pipeline.generate('text', self.settings, 'summarize'), 'ok')
+        self.assertTrue(slept.called)
+        client = urllib.error.HTTPError('http://127.0.0.1/api/generate', 400, 'bad', None, io.BytesIO())
+        with patch('time.sleep') as slept, patch('urllib.request.urlopen', side_effect=client):
+            with self.assertRaises(RuntimeError):
+                pipeline.generate('text', self.settings, 'summarize')
+        slept.assert_not_called()
+
+    def test_jobs_list_and_prefix_lookup(self):
+        store = JobStore(self.settings.path('JOBS_DIR'))
+        store.update('a' * 32, source='first', status='queued', stage='queued')
+        store.update('a' * 31 + 'b', source='second', status='succeeded', result={'summary': '/tmp/summary.md'})
+        store.update('c' * 32, source='third', status='queued', stage='queued')
+        corrupt = store.directory / ('b' * 32)
+        corrupt.mkdir()
+        (corrupt / 'job.json').write_text('{')
+        listed = store.list(10)
+        self.assertEqual([job['id'] for job in listed], ['c' * 32, 'a' * 31 + 'b', 'a' * 32])
+        self.assertNotIn('b' * 32, [job['id'] for job in listed])
+        self.assertEqual(store.get('c' * 8)['source'], 'third')
+        with self.assertRaises(ValueError):
+            store.resolve('a' * 8)
+        with self.assertRaises(FileNotFoundError):
+            store.resolve('dddddddd')
+        with self.assertRaises(ValueError):
+            store.list(0)
+        with patch.dict(os.environ, {'PERSONAL_TOOLKIT_HOME': str(self.root)}):
+            self.assertEqual(main(['jobs', '-n', '5']), 0)
+            self.assertEqual(main(['job', 'c' * 8]), 0)
+
+    def test_doctor_tolerates_malformed_model_lists(self):
+        from personal_toolkit.__main__ import doctor, model_installed
+        self.assertTrue(model_installed([{'model': 'llama3.2:3b'}], 'llama3.2:3b'))
+        self.assertFalse(model_installed([{'unexpected': True}, 'skip'], 'llama3.2:3b'))
+        payload = json.dumps({'models': [{'unexpected': True}]}).encode()
+        with patch('urllib.request.urlopen', return_value=__import__('io').BytesIO(payload)):
+            self.assertEqual(doctor(self.settings), 1)
+
+    def test_register_path_is_idempotent_and_quotes_spaces(self):
+        home = self.root / 'home'
+        home.mkdir()
+        env = {**os.environ, 'HOME': str(home), 'SHELL': '/bin/bash'}
+        script = str(ROOT / 'scripts/register-path.sh')
+        toolkit = str(self.root / 'toolkit root')
+        subprocess.run(['bash', script, toolkit], check=True, env=env)
+        subprocess.run(['bash', script, toolkit], check=True, env=env)
+        written = [path for path in (home / '.bashrc', home / '.bash_profile', home / '.profile')
+                   if path.exists() and 'Personal Toolkit PATH' in path.read_text()]
+        self.assertEqual(len(written), 1)
+        text = written[0].read_text()
+        self.assertEqual(text.count('Personal Toolkit PATH'), 1)
+        line = next(row for row in text.splitlines() if row.startswith('export PATH='))
+        expanded = subprocess.run(['bash', '-c', line + '\nprintf %s "$PATH"'],
+                                  capture_output=True, text=True, check=True,
+                                  env={**env, 'PATH': '/usr/bin'})
+        self.assertEqual(expanded.stdout.split(':')[0], str(Path(toolkit) / 'bin'))
 
 
 if __name__=='__main__':unittest.main()

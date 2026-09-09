@@ -1,11 +1,15 @@
 import json
+import re
 import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from .config import atomic_write
+
+COOKIE_BROWSERS = ("brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi")
 
 
 def validate_url(value):
@@ -22,15 +26,50 @@ def timestamp(seconds):
     return f"{value // 3600:02}:{value % 3600 // 60:02}:{value % 60:02}"
 
 
-def download(url, directory, audio=True):
+def whisper_language(settings):
+    value = (settings.get("WHISPER_LANGUAGE") or "").strip().lower()
+    if not value or value in ("auto", "detect"):
+        return None
+    if not re.fullmatch(r"[a-z]{2}(-[a-z]{2})?", value):
+        raise ValueError("WHISPER_LANGUAGE must be empty (auto) or a code such as nl or en.")
+    return value
+
+
+def cookie_browser(settings):
+    value = (settings.get("YTDLP_COOKIES_FROM_BROWSER") or "").strip().lower()
+    if not value:
+        return None
+    if value not in COOKIE_BROWSERS:
+        raise ValueError("YTDLP_COOKIES_FROM_BROWSER must be empty or one of: " + ", ".join(COOKIE_BROWSERS))
+    return value
+
+
+def _last_output_line(text, limit=300):
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    detail = lines[-1] if lines else ""
+    if len(detail) > limit:
+        return detail[:limit] + "…"
+    return detail
+
+
+def download(url, directory, audio=True, settings=None):
     validate_url(url)
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    args = ["yt-dlp", "--no-playlist", "--no-progress", "--restrict-filenames",
+    args = ["yt-dlp", "--no-playlist", "--retries", "3", "--fragment-retries", "3",
             "--print", "after_move:filepath", "-o", str(directory / "%(id)s.%(ext)s")]
+    browser = cookie_browser(settings) if settings is not None else None
+    if browser:
+        args += ["--cookies-from-browser", browser]
     if audio:
-        args += ["-f", "bestaudio/best"]
-    result = subprocess.run(args + ["--", url], check=True, capture_output=True, text=True, timeout=3600)
+        args += ["-f", "bestaudio/best", "-x", "--audio-format", "m4a"]
+    try:
+        result = subprocess.run(args + ["--", url], capture_output=True, text=True, timeout=3600)
+    except FileNotFoundError as error:
+        raise RuntimeError("yt-dlp is not installed. Run make setup.") from error
+    if result.returncode != 0:
+        detail = _last_output_line(result.stderr) or _last_output_line(result.stdout) or f"exit {result.returncode}"
+        raise RuntimeError("Download failed: " + detail)
     paths = result.stdout.strip().splitlines()
     if len(paths) != 1 or not Path(paths[0]).is_file():
         raise RuntimeError("Downloader did not return exactly one existing media file.")
@@ -39,12 +78,16 @@ def download(url, directory, audio=True):
 
 def transcribe(source, target, settings):
     from faster_whisper import WhisperModel
-    source = Path(source)
+    source = Path(source).expanduser()
     if not source.is_file():
         raise ValueError(f"Media file not found: {source}")
     model = WhisperModel(settings.get("WHISPER_MODEL"), device=settings.get("WHISPER_DEVICE"),
                          compute_type=settings.get("WHISPER_COMPUTE_TYPE"))
-    segments, info = model.transcribe(str(source), beam_size=5, vad_filter=True)
+    options = {"beam_size": 5, "vad_filter": True}
+    language = whisper_language(settings)
+    if language:
+        options["language"] = language
+    segments, info = model.transcribe(str(source), **options)
     items = [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments if s.text.strip()]
     if not items:
         raise RuntimeError("No speech detected; no summary was generated.")
@@ -80,11 +123,26 @@ def generate(text, settings, instruction, system=None):
                "options": {"num_ctx": 8192, "num_predict": 1200, "temperature": 0.2}}
     url = settings.get("OLLAMA_URL").rstrip("/") + "/api/generate"
     request = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=900) as response:
-            result = json.load(response)
-    except (urllib.error.URLError, TimeoutError) as error:
-        raise RuntimeError("Ollama request failed. Check the service and installed model with pt doctor.") from error
+    result = None
+    last_error = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=900) as response:
+                result = json.load(response)
+            last_error = None
+            break
+        except json.JSONDecodeError as error:
+            last_error = error
+        except urllib.error.HTTPError as error:
+            last_error = error
+            if error.code not in (502, 503, 504):
+                break
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            last_error = error
+        if attempt < 2:
+            time.sleep(1.5 * (attempt + 1))
+    if last_error is not None or result is None:
+        raise RuntimeError("Ollama request failed. Check the service and installed model with pt doctor.") from last_error
     if not isinstance(result, dict):
         raise RuntimeError("Ollama returned an invalid response object.")
     answer = result.get("response", "")
@@ -105,9 +163,11 @@ def generate(text, settings, instruction, system=None):
 def summarize(text, settings):
     if not text.strip():
         raise ValueError("Cannot summarize an empty transcript.")
-    instruction = ("Maak een Nederlandse samenvatting in maximaal 5 punten. "
+    instruction = ("Maak een Nederlandse samenvatting met korte bullets onder deze koppen: "
+                   "Kernpunten; Beslissingen of conclusies; Open punten of vervolgstappen. "
                    "Behoud concrete namen, cijfers en nuances. Vermeld bij elk punt een bestaande "
-                   "[HH:MM:SS]-tijdsaanduiding als de bron die bevat. Verzin geen tijdstippen.")
+                   "[HH:MM:SS]-tijdsaanduiding als de bron die bevat. Verzin geen tijdstippen, namen of feiten. "
+                   "Schrijf 'geen' onder een kop zonder inhoud.")
     parts = list(chunks(text))
     for _ in range(8):
         summaries = [generate(part, settings, instruction) for part in parts]
@@ -122,7 +182,7 @@ def run_pipeline(source, folder, settings, progress=lambda stage: None):
     folder.mkdir(parents=True, exist_ok=True)
     if urllib.parse.urlsplit(str(source)).scheme in ("http", "https"):
         progress("downloading")
-        media = download(source, folder / "media")
+        media = download(source, folder / "media", settings=settings)
     else:
         media = Path(source).expanduser().resolve()
         if not media.is_file():

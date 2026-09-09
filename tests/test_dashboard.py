@@ -35,6 +35,9 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(data['apps']['n8n']['healthUrl'], 'http://localhost:15678/healthz')
         self.assertEqual(data['apps']['ollama']['healthUrl'], 'http://127.0.0.1:11435/api/tags')
         self.assertEqual(data['apps']['plausible']['url'], 'http://localhost:18000')
+        self.assertEqual(data['models']['ollama'], self.settings.get('OLLAMA_MODEL'))
+        self.assertEqual(data['models']['whisper'], 'base')
+        self.assertEqual(data['models']['whisperLanguage'], 'nl')
         self.assertEqual(path.stat().st_mode & 0o777, 0o644)
         for key in SECRET_KEYS:
             self.assertNotIn(key, text)
@@ -56,7 +59,9 @@ class DashboardTests(unittest.TestCase):
         for key, value in [('DASHBOARD_PORT', '0'), ('N8N_PORT', '65536'), ('FOOOCUS_PORT', 'x'),
                            ('DASHBOARD_HOST', '0.0.0.0'), ('DASHBOARD_HOST', '\";alert(1);//'),
                            ('OLLAMA_URL', 'http://user:secret@localhost:11434'),
-                           ('PLAUSIBLE_BASE_URL', 'https://example.org/?token=secret')]:
+                           ('PLAUSIBLE_BASE_URL', 'https://example.org/?token=secret'),
+                           ('OLLAMA_MODEL', '../../etc/passwd'),
+                           ('WHISPER_LANGUAGE', 'nl;alert(1)')]:
             settings = Settings(self.root, environ={})
             settings.values[key] = value
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):

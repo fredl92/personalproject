@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { execFileSync } = require('node:child_process');
-const { checkStatus, safeUrl, CLI_COMMANDS, createCommand } = require('../dashboard/app.js');
+const { checkStatus, safeUrl, CLI_COMMANDS, createCommand, describeModels } = require('../dashboard/app.js');
 
 test('HTTP success is reachable, without claiming app health', async () => {
   const result = await checkStatus('http://localhost:5678/healthz', async () => ({ status: 200, ok: true, type: 'cors' }));
@@ -56,6 +56,14 @@ test('copyable commands retain placeholders and quoted prompts', () => {
   assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt download <url>'));
   assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt ask "jouw vraag"'));
   assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt services up automation'));
+  assert.ok(CLI_COMMANDS.some(c => c.cmd === 'pt jobs'));
+});
+
+test('model description uses public names as text', () => {
+  const text = describeModels({ models: { ollama: 'llama3.2:3b', whisper: 'base', whisperLanguage: 'nl' } });
+  assert.match(text, /llama3\.2:3b/);
+  assert.match(text, /Whisper base \(nl\)/);
+  assert.equal(describeModels({}), 'Ollama voert het taalmodel uit. Het antwoord verschijnt in Terminal.');
 });
 
 function commandArguments(command) {
