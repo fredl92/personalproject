@@ -23,6 +23,18 @@ from personal_toolkit.__main__ import main
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def write_silence_wav(path, seconds=0.3):
+    import wave
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "w") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(16000)
+        handle.writeframes(b"\x00\x00" * int(16000 * seconds))
+    return path
+
+
 class Workspace(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='toolkit review ')
@@ -131,11 +143,12 @@ class PipelineTests(Workspace):
 
     def test_long_summary_is_reduced_and_preserves_instruction(self):
         seen = []
+        stages = []
         def generate(text, settings, instruction):
             seen.append((text, instruction))
             return '- Budget [00:00:12]'
         with patch.object(pipeline, 'generate', side_effect=generate):
-            result = pipeline.summarize('a'*25000, self.settings)
+            result = pipeline.summarize('a'*25000, self.settings, stages.append)
         self.assertEqual(len(seen), 4)
         self.assertTrue(all(len(text) <= 10000 for text, _ in seen))
         self.assertTrue(all('Nederlandse' in instruction for _, instruction in seen))
@@ -143,6 +156,8 @@ class PipelineTests(Workspace):
         self.assertTrue(any('deelsamenvattingen' in instruction for _, instruction in seen))
         self.assertIn('[00:00:12]', result)
         self.assertIn('Kernpunten', result)
+        self.assertIn('summarizing 1/3', stages)
+        self.assertIn('summarizing 1/1', stages)
 
     def test_normalize_summary_adds_missing_dutch_headings(self):
         wrapped = pipeline.normalize_summary('- Budget [00:00:12]')
@@ -154,6 +169,9 @@ class PipelineTests(Workspace):
         self.assertTrue(structured.startswith('## Kernpunten'))
         partial = pipeline.normalize_summary('## Kernpunten\n- alleen dit')
         self.assertIn('## Beslissingen of conclusies', partial)
+        empty_bullets = pipeline.normalize_summary('## Kernpunten\n\n-\n\n## Beslissingen of conclusies\n*\n## Open punten of vervolgstappen\n')
+        self.assertEqual(empty_bullets.count('geen'), 3)
+        self.assertNotIn('\n-\n', '\n' + empty_bullets + '\n')
         with self.assertRaises(RuntimeError):
             pipeline.normalize_summary('   ')
 
@@ -170,13 +188,13 @@ class PipelineTests(Workspace):
             pipeline.resolve_media_source('https://example.org/video.mp4')
         job = self.root / 'job'
         (job / 'media').mkdir(parents=True)
-        (job / 'media' / 'clip.m4a').write_bytes(b'')
+        write_silence_wav(job / 'media' / 'clip.wav')
         (job / 'transcript.txt').write_text('[00:00:01] Hallo daar.\n')
         stages = []
         with patch.object(pipeline, 'generate', return_value='- Hallo [00:00:01]') as generate:
             result = pipeline.run_pipeline('https://example.org/video', job, self.settings, stages.append)
         generate.assert_called()
-        self.assertEqual(stages, ['reusing-transcript', 'summarizing'])
+        self.assertEqual(stages, ['reusing-transcript', 'summarizing 1/1'])
         self.assertIn('Hallo', Path(result['summary']).read_text())
         (job / 'transcript.txt').unlink()
         stages.clear()
@@ -186,8 +204,72 @@ class PipelineTests(Workspace):
                 patch.object(pipeline, 'download') as download:
             pipeline.run_pipeline('https://example.org/video', job, self.settings, stages.append)
         download.assert_not_called()
-        self.assertEqual(stages, ['reusing-media', 'transcribing', 'summarizing'])
-        self.assertTrue(captured['source'].endswith('clip.m4a'))
+        self.assertEqual(stages[0], 'reusing-media')
+        self.assertIn('transcribing', stages)
+        self.assertEqual(stages[-1], 'summarizing 1/1')
+        self.assertTrue(captured['source'].endswith('clip.wav'))
+
+    def test_resume_skips_tiny_corrupt_and_partial_media(self):
+        job = self.root / 'job'
+        media = job / 'media'
+        media.mkdir(parents=True)
+        (media / 'clip.m4a.part').write_bytes(b'x' * 5000)
+        (media / 'tiny.m4a').write_bytes(b'\x00' * 40)
+        self.assertEqual(pipeline.media_candidates(job), [])
+        self.assertIsNone(pipeline.existing_media(job))
+        junk = media / 'corrupt.m4a'
+        junk.write_bytes(b'not a media file' * 80)
+        self.assertEqual([path.name for path in pipeline.media_candidates(job)], ['corrupt.m4a'])
+        with patch.object(pipeline, 'probe_media', return_value=False):
+            self.assertIsNone(pipeline.existing_media(job))
+        audio = write_silence_wav(media / 'good.wav')
+        leftover_video = media / 'source.mp4'
+        leftover_video.write_bytes(b'\x00' * 20000)
+
+        def readable(path):
+            return Path(path).suffix.lower() == '.wav'
+
+        with patch.object(pipeline, 'probe_media', side_effect=readable):
+            self.assertEqual(pipeline.existing_media(job), audio)
+        pipeline.clear_partial_downloads(job)
+        self.assertFalse((media / 'clip.m4a.part').exists())
+        downloaded = self.root / 'fresh.wav'
+        write_silence_wav(downloaded)
+        stages = []
+        fake, _ = self.fake_whisper()
+        with patch.dict(sys.modules, {'faster_whisper': fake}), \
+                patch.object(pipeline, 'generate', return_value='- Budget [00:00:12]'), \
+                patch.object(pipeline, 'existing_media', return_value=None), \
+                patch.object(pipeline, 'download', return_value=downloaded) as download:
+            pipeline.run_pipeline('https://example.org/video', job, self.settings, stages.append)
+        download.assert_called()
+        self.assertEqual(stages[0], 'downloading')
+
+    def test_probe_media_requires_size_and_uses_ffmpeg_when_present(self):
+        missing = self.root / 'missing.wav'
+        self.assertFalse(pipeline.probe_media(missing))
+        tiny = self.root / 'tiny.wav'
+        tiny.write_bytes(b'\x00' * 10)
+        self.assertFalse(pipeline.probe_media(tiny))
+        junk = self.root / 'junk.m4a'
+        junk.write_bytes(b'not a media file' * 80)
+        wav = write_silence_wav(self.root / 'ok.wav')
+        with patch.object(pipeline.shutil, 'which', return_value=None):
+            self.assertTrue(pipeline.probe_media(junk))
+            self.assertTrue(pipeline.probe_media(wav))
+        if shutil.which('ffmpeg') is None:
+            return
+        self.assertFalse(pipeline.probe_media(junk))
+        self.assertTrue(pipeline.probe_media(wav))
+
+    def test_heartbeat_emits_elapsed_notes(self):
+        from io import StringIO
+        buf = StringIO()
+        with pipeline.heartbeat('still waiting on Ollama', interval=0.05, output=buf):
+            time.sleep(0.2)
+        text = buf.getvalue()
+        self.assertIn('still waiting on Ollama', text)
+        self.assertIn('s)…', text)
 
     def test_download_passes_url_as_single_argument(self):
         media = self.root / 'media file.wav'; media.touch()
@@ -213,7 +295,9 @@ class PipelineTests(Workspace):
         stages=[]
         with patch.dict(sys.modules, {'faster_whisper':fake}), patch.object(pipeline, 'generate', return_value='- Budget [00:00:12]'):
             result = pipeline.run_pipeline(str(source), self.root / 'job', self.settings, stages.append)
-        self.assertEqual(stages, ['transcribing', 'summarizing'])
+        self.assertEqual(stages[0], 'transcribing')
+        self.assertEqual(stages[-1], 'summarizing 1/1')
+        self.assertTrue(any(item.startswith('transcribing') for item in stages))
         self.assertTrue(Path(result['summary']).exists())
         self.assertTrue(Path(result['segments']).exists())
         self.assertIn('Budget', Path(result['summary']).read_text())
@@ -257,6 +341,34 @@ class JobTests(Workspace):
         self.assertEqual(result['status'],'failed')
         self.assertEqual(result['stage'],'summarizing')
         self.assertTrue((store.folder(job['id'])/'transcript.txt').exists())
+
+    def test_concurrent_execute_is_rejected(self):
+        store = JobStore(self.root / 'jobs')
+        job = store.create('source')
+        started = threading.Event()
+        release = threading.Event()
+
+        def hold(source, folder, settings, progress):
+            started.set()
+            self.assertTrue(release.wait(3))
+            (folder / 'summary.md').write_text('ok')
+            return {'summary_text': 'ok'}
+
+        first = threading.Thread(target=lambda: store.execute(job['id'], self.settings, runner=hold))
+        first.start()
+        self.assertTrue(started.wait(3))
+        with self.assertRaises(ValueError) as error:
+            store.execute(job['id'], self.settings, runner=lambda *args: None)
+        self.assertIn('already running', str(error.exception))
+        live = store.create('live')
+        store.update(live['id'], status='running', pid=os.getpid(), owner='local')
+        active_ids = {job['id'] for job in store.running_local()}
+        self.assertIn(live['id'], active_ids)
+        self.assertIn(job['id'], active_ids)
+        self.assertNotIn(live['id'], {item['id'] for item in store.running_local(exclude_id=live['id'])})
+        release.set()
+        first.join(3)
+        self.assertEqual(store.get(job['id'])['status'], 'succeeded')
 
     def test_recovery_marks_only_interrupted_jobs(self):
         store=JobStore(self.root/'jobs');a=store.create('a');b=store.create('b')
@@ -585,6 +697,27 @@ class DoctorAndJobsTests(Workspace):
                                   capture_output=True, text=True, check=True,
                                   env={**env, 'PATH': '/bin:/usr/bin'})
         self.assertEqual(expanded.stdout.split(':')[0], str(Path(toolkit) / 'bin'))
+
+    def test_register_path_updates_moved_install(self):
+        home = self.root / 'home'
+        home.mkdir()
+        env = {**os.environ, 'HOME': str(home), 'SHELL': '/bin/bash'}
+        script = str(ROOT / 'scripts/register-path.sh')
+        first = str(self.root / 'old toolkit')
+        second = str(self.root / 'new toolkit')
+        subprocess.run(['bash', script, first], check=True, env=env)
+        subprocess.run(['bash', script, second], check=True, env=env)
+        written = [path for path in (home / '.bashrc', home / '.bash_profile', home / '.profile')
+                   if path.exists() and 'Personal Toolkit PATH' in path.read_text()]
+        self.assertEqual(len(written), 1)
+        text = written[0].read_text()
+        self.assertEqual(text.count('Personal Toolkit PATH'), 1)
+        line = next(row for row in text.splitlines() if row.startswith('export PATH='))
+        expanded = subprocess.run(['bash', '-c', line + '\nprintf %s "$PATH"'],
+                                  capture_output=True, text=True, check=True,
+                                  env={**env, 'PATH': '/bin:/usr/bin'})
+        self.assertEqual(expanded.stdout.split(':')[0], str(Path(second) / 'bin'))
+        self.assertNotIn(str(Path(first) / 'bin'), expanded.stdout.split(':')[0])
 
 
 if __name__=='__main__':unittest.main()

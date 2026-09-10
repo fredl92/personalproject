@@ -59,7 +59,7 @@ function inspectOllamaHealth(body, wanted, fallback) {
 }
 
 const TASKS = {
-  pipeline: { title: "Samenvatting maken", short: "Samenvatten", icon: "≋", description: "Maak een transcript en Nederlandse samenvatting van een video of opname.", result: "De eerste verwerking kan even duren. Terminal toont waar het transcript en de samenvatting zijn opgeslagen. Bij een fout of Ctrl-C blijft het transcript bewaard; hervat met pt retry <id>." },
+  pipeline: { title: "Samenvatting maken", short: "Samenvatten", icon: "≋", description: "Maak een transcript en Nederlandse samenvatting van een video of opname.", result: "Terminal toont stadia (downloading / transcribing / summarizing) en, bij lange runs, tussentijdse tijdsaanduidingen. Bij een fout of Ctrl-C blijft het transcript bewaard; hervat met pt retry <id>. Kijk mee met pt jobs." },
   transcribe: { title: "Opname uitschrijven", short: "Uitschrijven", icon: "↳", description: "Zet een audio- of videobestand om naar tekst met tijdsaanduidingen.", result: "Terminal toont het pad naar je tekstbestand. Het spraakmodel wordt bij het eerste gebruik gedownload." },
   download: { title: "Video downloaden", short: "Downloaden", icon: "↓", description: "Bewaar een video of alleen het geluid op je Mac.", result: "Terminal toont waar je download is opgeslagen." },
   ask: { title: "Vraag aan je AI", short: "Vraag stellen", icon: "✦", description: "Laat je lokale AI iets uitleggen, ideeën geven of een tekst helpen schrijven.", result: "Het antwoord verschijnt in Terminal. Controleer belangrijke feiten altijd zelf." },
@@ -120,7 +120,7 @@ function localFilePath(value) {
 function mediaPath(value) {
   value = localFilePath(value);
   if (!value.startsWith("/") && !value.startsWith("~/")) {
-    throw new Error("Plak het volledige bestandspad uit Finder. Selecteer het bestand en druk op ⌥ + ⌘ + C.");
+    throw new Error("Plak het volledige bestandspad. Het moet beginnen met / of ~/.");
   }
   if (value === "/" || value === "~/") throw new Error("Kies een bestand, niet alleen je thuismap.");
   return value.startsWith("~/") ? '"$HOME"/' + shellQuote(value.slice(2)) : shellQuote(value);
@@ -133,6 +133,23 @@ function cycleTask(current, key, tasks = Object.keys(TASKS)) {
   const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[key];
   if (!delta || index < 0) return current;
   return tasks[(index + delta + tasks.length) % tasks.length];
+}
+
+function isMacPlatform(info = typeof navigator !== "undefined" ? navigator : {}) {
+  const platform = info.userAgentData?.platform || info.platform || info.userAgent || "";
+  return /mac/i.test(String(platform));
+}
+
+function filePathHelp(isMac = isMacPlatform()) {
+  return isMac
+    ? "Selecteer de opname in Finder, druk op ⌥ + ⌘ + C en plak het pad hier. Een file://-link mag ook. Je uploadt geen bestand."
+    : "Plak het volledige bestandspad (/home/… of ~/…). Een lokale file://-link mag ook. Je uploadt geen bestand.";
+}
+
+function commandShortcutHelp(isMac = isMacPlatform()) {
+  return isMac
+    ? "⌘ + Enter maakt het commando. "
+    : "Ctrl + Enter maakt het commando. ";
 }
 
 function describeModels(cfg) {
@@ -199,7 +216,7 @@ function configureInput() {
   const input = document.getElementById("task-input");
   input.placeholder = ask ? "Bijvoorbeeld: leg obligatieduration uit in eenvoudige woorden." : file ? "/Users/…/Documents/opname.m4a" : "https://www.youtube.com/watch?v=…";
   input.rows = ask ? 4 : 2;
-  document.getElementById("input-help").textContent = ask ? "Stel je vraag in gewone taal." : file ? "Selecteer de opname in Finder, druk op ⌥ + ⌘ + C en plak het pad hier. Een file://-link mag ook. Je uploadt geen bestand." : "Plak de link van de video die je wilt verwerken.";
+  document.getElementById("input-help").textContent = ask ? "Stel je vraag in gewone taal." : file ? filePathHelp() : "Plak de link van de video die je wilt verwerken.";
   invalidateResult();
 }
 
@@ -343,8 +360,10 @@ async function refreshStatus() {
   if (refreshBusy) return;
   refreshBusy = true;
   const button = document.getElementById("refresh-btn");
+  const apps = document.getElementById("apps");
   button.disabled = true;
   button.textContent = "Controleren…";
+  apps?.setAttribute("aria-busy", "true");
   try {
     await Promise.all([...document.querySelectorAll("[data-health-url]")].map(async target => {
       const badge = target.querySelector("[data-status]");
@@ -366,6 +385,7 @@ async function refreshStatus() {
     refreshBusy = false;
     button.disabled = false;
     button.textContent = "Controleer apps";
+    apps?.removeAttribute("aria-busy");
   }
 }
 
@@ -439,6 +459,15 @@ function init() {
   bindTasks();
   bindActions();
   renderCli();
+  const mac = isMacPlatform();
+  const local = document.querySelector(".local-label");
+  if (local) local.textContent = mac ? "Op je Mac" : "Op dit apparaat";
+  const shortcut = document.querySelector(".kbd-hint");
+  if (shortcut) shortcut.textContent = commandShortcutHelp(mac);
+  const finder = document.getElementById("finder-help");
+  if (finder && !mac) {
+    finder.textContent = "Kopieer het volledige pad van je opname uit je bestandsbeheerder en plak dat in het invoerveld.";
+  }
   const cfg = window.DASHBOARD_CONFIG;
   try {
     if (!cfg?.apps?.dashboard) throw new Error("Missing configuration");
@@ -457,5 +486,5 @@ function init() {
   setInterval(() => { if (!document.hidden) refreshStatus(); }, 60000);
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote, describeModels, inspectOllamaHealth, cycleTask, localFilePath };
+if (typeof module !== "undefined" && module.exports) module.exports = { checkStatus, safeUrl, CLI_COMMANDS, createCommand, shellQuote, describeModels, inspectOllamaHealth, cycleTask, localFilePath, isMacPlatform, filePathHelp, commandShortcutHelp };
 if (typeof document !== "undefined") init();

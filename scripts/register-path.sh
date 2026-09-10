@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Append the toolkit bin directory to the user's shell PATH once.
+# If the marker already exists but points at another install, update that line.
 set -euo pipefail
 ROOT="${1:?Usage: register-path.sh <toolkit-root>}"
 if [[ -z "${HOME:-}" ]]; then
@@ -16,9 +17,31 @@ case "${SHELL:-/bin/bash}" in
   *) SHELL_RC="${HOME}/.profile" ;;
 esac
 MARKER='# Personal Toolkit PATH'
-if grep -Fq "$MARKER" "$SHELL_RC" 2>/dev/null; then
+BIN_PATH="${ROOT}/bin"
+EXPORT_LINE="export PATH=$(printf '%q' "$BIN_PATH"):\"\$PATH\""
+touch "$SHELL_RC"
+if grep -Fq "$MARKER" "$SHELL_RC"; then
+  if grep -Fq "$EXPORT_LINE" "$SHELL_RC"; then
+    exit 0
+  fi
+  tmp="$(mktemp "${SHELL_RC}.toolkitpath.XXXXXX")"
+  TOOLKIT_PATH_MARKER="$MARKER" TOOLKIT_PATH_EXPORT="$EXPORT_LINE" awk '
+    $0 == ENVIRON["TOOLKIT_PATH_MARKER"] {
+      print
+      if ((getline nextline) > 0) {
+        if (nextline ~ /^export PATH=/) { print ENVIRON["TOOLKIT_PATH_EXPORT"]; next }
+        print ENVIRON["TOOLKIT_PATH_EXPORT"]
+        print nextline
+        next
+      }
+      print ENVIRON["TOOLKIT_PATH_EXPORT"]
+      next
+    }
+    { print }
+  ' "$SHELL_RC" > "$tmp"
+  mv "$tmp" "$SHELL_RC"
+  echo "Updated ${BIN_PATH} in PATH in ${SHELL_RC}. Open a new terminal to use pt."
   exit 0
 fi
-touch "$SHELL_RC"
-{ printf '\n%s\n' "$MARKER"; printf 'export PATH=%q:"$PATH"\n' "${ROOT}/bin"; } >> "$SHELL_RC"
-echo "Added ${ROOT}/bin to PATH in ${SHELL_RC}. Open a new terminal to use pt."
+{ printf '\n%s\n' "$MARKER"; printf '%s\n' "$EXPORT_LINE"; } >> "$SHELL_RC"
+echo "Added ${BIN_PATH} to PATH in ${SHELL_RC}. Open a new terminal to use pt."
